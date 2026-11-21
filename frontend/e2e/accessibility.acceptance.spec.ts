@@ -236,7 +236,8 @@ for (const width of [320, 390, 1280]) {
 
     for (const [path, ready] of routes) {
       if (path !== '/en') await page.goto(path, { waitUntil: 'domcontentloaded' });
-      await expect(ready).toBeVisible();
+      // Lessons shows its unlocked count after the learner's history has loaded.
+      await ready.waitFor({ state: 'visible' });
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth > innerWidth + 1
       );
