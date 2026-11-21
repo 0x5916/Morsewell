@@ -93,6 +93,9 @@ jobs:
       NODE_VERSION: "26.13.1"
       # Build-time public value; the acceptance server supplies its own API base.
       PUBLIC_API_BASE: "http://localhost:8080/v1"
+      # The Google deletion tests use a mocked provider and a synthetic public client ID.
+      PUBLIC_GOOGLE_CLIENT_ID: "000000000000-morsewell-regression-fixture.apps.googleusercontent.com"
+      PLAYWRIGHT_SKIP_BUILD: "1"
     defaults:
       run:
         working-directory: frontend
@@ -118,14 +121,17 @@ jobs:
             playwright-${{ runner.os }}-
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium firefox webkit
-      - name: Build
+      - name: Build with the synthetic Google client ID
         run: npm run build
       - name: Browser tests
         timeout-minutes: 40
         run: npm run test:e2e -- --workers=2
+      - name: Test login and registration with Google sign-in disabled
         env:
-          # Build ran in the previous step; avoid rebuilding under the preview web server.
-          PLAYWRIGHT_SKIP_BUILD: "1"
+          PUBLIC_GOOGLE_CLIENT_ID: ""
+        run: |
+          npm run build
+          npm run test:e2e -- e2e/public-auth.preview.spec.ts --workers=2
       - name: Upload Playwright failure artifacts
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
