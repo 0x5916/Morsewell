@@ -1,62 +1,75 @@
 @import 'tailwindcss';
 @import './lib/styles/layout.css';
 
+/* Share the dark-mode condition between the three palette tables. */
+@custom-variant dark-mode {
+  &[data-theme='dark'] {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:not([data-theme='light']) {
+      @slot;
+    }
+  }
+}
+
 :root {
-  color-scheme: dark;
+  color-scheme: light;
+  background-color: var(--bg-base);
 
-  /* Forest Jade: neutral charcoal surfaces; jade carries interactive emphasis. */
-  --bg-base: #15191b;
-  --bg-surface: #22272a;
-  --bg-inset: #2c3236;
+  /* Forest Jade / Graphite is the default. */
+  --bg-base: #f4f4f1;
+  --bg-surface: #fffffe;
+  --bg-inset: #e8e9e5;
+  --border: #c9ccc6;
+  --border-card: #d2d5ce;
+  --border-subtle: #daddd6;
+  --border-control: #767b73;
+  --border-control-hover: #596258;
+  --text-primary: #252c28;
+  --text-secondary: #48514c;
+  --text-muted: #5d665f;
+  --text-label: #515b54;
+  --accent: #27694e;
+  --accent-cta-h: #1f573f;
+  --accent-pressed: #174630;
+  --on-accent: #ffffff;
+  --focus-color: #236b50;
+  --selection-bg: #e2eee5;
+  --status-good: #1f6262;
+  --status-ok: #76551c;
+  --status-bad: #943e39;
+  --status-extra: #5a5576;
+  --status-good-tint: #e3f0ec;
+  --status-ok-tint: #f4edda;
+  --status-bad-tint: #f5e5e1;
+  --status-extra-tint: #edeaf3;
+  --result-good-bg: #e4efe8;
+  --result-bad-bg: #f5e6e2;
+  --on-danger: #ffffff;
+  --heat-0: #eaece7;
+  --heat-1: #6a8777;
+  --heat-2: #4d7060;
+  --heat-3: #305940;
+  --heat-4: #1c432f;
+  --control-disabled-bg: #e0e2dc;
+  --control-disabled-fg: #5e645b;
 
-  --border: #42494d;
-  --border-subtle: #596166;
-  /* Edge of a card/panel surface. Separate from `--border` so flat cards stay
-     legible in light mode without strengthening inputs, navbar or footer. */
-  --border-card: #42494d;
-  /* Form-control edges need 3:1 against the surface they sit on (WCAG 1.4.11),
-     so controls get a stronger rule than decorative hairlines. */
-  --border-control: #828d92;
-  --border-control-hover: #a6afb3;
-
-  --text-primary: #edf1f0;
-  --text-secondary: #c7cfcd;
-  --text-muted: #a8b3af;
-  --text-label: #b9c3bf;
-
-  /* Forest shades in dark and light modes share the interactive roles:
-     buttons, links, the playhead, the active lesson and focus. Feedback uses
-     separate semantic tokens, with text and icons identifying each result. */
-  --accent: #85d1a4;
-  --accent-cta: #85d1a4;
-  --accent-cta-h: #a0dfba;
+  /* Roles which deliberately share a color across every Forest Jade palette. */
   --brand-gold: #eac384;
+  --accent-cta: var(--accent);
   --danger: var(--status-bad);
-  /* Soft Forest fills carry dark ink; the light theme uses deep Forest with
-     a light label so both themes retain readable primary actions. */
-  --on-accent: #1c3228;
-
-  --result-good-bg: #202f28;
-  --result-bad-bg: #352622;
-
-  /* Semantic status roles. The result diff, verified/accuracy states and inline
-     banners all read from these; components must not hard-code status hexes.
-     The light theme re-tunes them for contrast on paper. */
-  --status-good: #65c6bc;
-  --status-ok: #d8bc70;
-  --status-bad: #eb9a8b;
-  --status-extra: #9bbad3;
-  /* Matching washes for pills, banners and the score hero. */
-  --status-good-tint: color-mix(in srgb, var(--status-good) 15%, transparent);
-  --status-ok-tint: color-mix(in srgb, var(--status-ok) 15%, transparent);
-  --status-bad-tint: color-mix(in srgb, var(--status-bad) 15%, transparent);
-  --status-extra-tint: color-mix(in srgb, var(--status-extra) 15%, transparent);
-
-  /* Morsewell learning-specific semantic aliases */
+  --link: var(--accent);
+  --input-bg: var(--bg-surface);
+  --input-placeholder: var(--text-muted);
+  --progress-track: var(--bg-inset);
+  --progress-fill: var(--accent);
   --learning-current: var(--accent);
   --learning-stable: var(--status-good);
   --learning-review: var(--status-ok);
   --learning-error: var(--status-bad);
+  --learning-new: var(--text-muted);
+
   --session-max-width: 42rem;
   --answer-target-min: 3rem;
 
@@ -69,10 +82,10 @@
 
   /* Elevation is reserved for surfaces that actually stack above the page.
      Static cards and panels are flat (see `.card` / `.panel` below). */
-  --shadow-menu: 0 2px 10px rgba(0, 0, 0, 0.45);
-  --shadow-overlay: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --shadow-menu: 0 2px 10px rgba(37, 38, 32, 0.12);
+  --shadow-overlay: 0 12px 32px rgba(37, 38, 32, 0.18);
 
-  --focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent) 80%, transparent);
+  --focus-ring: 0 0 0 2px var(--focus-color);
 
   /* 4px rhythm. */
   --space-1: 0.25rem;
@@ -135,69 +148,205 @@
   --leading-snug: 1.35;
   --leading-normal: 1.6;
   --leading-relaxed: 1.72;
-}
 
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme='dark']) {
-    color-scheme: light;
-    --bg-base: #f7f8f3;
-    --bg-surface: #ffffff;
-    --bg-inset: #e9ede7;
-    --border: #d2d9d1;
-    --border-subtle: #bdc7bd;
-    --border-card: #d2d9d1;
-    --border-control: #778177;
-    --border-control-hover: #59665c;
-    --text-primary: #1c3228;
-    --text-secondary: #465c50;
-    --text-muted: #5d6f63;
-    --text-label: #53695a;
-    --accent: #27694e;
-    --accent-cta: #27694e;
-    --accent-cta-h: #20583f;
-    --on-accent: #ffffff;
-    --status-good: #17675f;
-    --status-ok: #6d5412;
-    --status-bad: #943a30;
-    --status-extra: #365b7b;
-    --result-good-bg: #e6eee7;
-    --result-bad-bg: #f4e7e2;
-    --shadow-menu: 0 2px 10px rgba(37, 38, 32, 0.12);
-    --shadow-overlay: 0 12px 32px rgba(37, 38, 32, 0.18);
+  @variant dark-mode {
+    color-scheme: dark;
+    --shadow-menu: 0 2px 10px rgba(0, 0, 0, 0.45);
+    --shadow-overlay: 0 12px 32px rgba(0, 0, 0, 0.5);
+    --bg-base: #191b1c;
+    --bg-surface: #252829;
+    --bg-inset: #313536;
+    --border: #414645;
+    --border-card: #484d4b;
+    --border-subtle: #373c3b;
+    --border-control: #89938e;
+    --border-control-hover: #a6b0ab;
+    --text-primary: #ebefeb;
+    --text-secondary: #cad1cc;
+    --text-muted: #acb5af;
+    --text-label: #bac4bd;
+    --accent: #85d1a4;
+    --accent-cta-h: #a2dfbb;
+    --accent-pressed: #70bd92;
+    --on-accent: #192e22;
+    --focus-color: #94dfb1;
+    --selection-bg: #2a3e33;
+    --status-good: #8acbc3;
+    --status-ok: #e2c484;
+    --status-bad: #eba298;
+    --status-extra: #c2b5d8;
+    --status-good-tint: #263c38;
+    --status-ok-tint: #3e3729;
+    --status-bad-tint: #422e2e;
+    --status-extra-tint: #37333f;
+    --result-good-bg: #263b30;
+    --result-bad-bg: #402f2d;
+    --on-danger: #35201d;
+    --heat-0: #2f3432;
+    --heat-1: #6b8979;
+    --heat-2: #88a992;
+    --heat-3: #a7c9ab;
+    --heat-4: #cbe6cb;
+    --control-disabled-bg: #343937;
+    --control-disabled-fg: #aab3ad;
   }
 }
 
-[data-theme='light'] {
-  color-scheme: light;
-  --bg-base: #f7f8f3;
-  --bg-surface: #ffffff;
-  --bg-inset: #e9ede7;
-  --border: #d2d9d1;
-  --border-subtle: #bdc7bd;
-  --border-card: #d2d9d1;
-  --border-control: #778177;
-  --border-control-hover: #59665c;
-  --text-primary: #1c3228;
-  --text-secondary: #465c50;
-  --text-muted: #5d6f63;
-  --text-label: #53695a;
-  --accent: #27694e;
-  --accent-cta: #27694e;
-  --accent-cta-h: #20583f;
+:root[data-palette='warm'] {
+  --bg-base: #f5f0e6;
+  --bg-surface: #fffdf7;
+  --bg-inset: #ebe4d6;
+  --border: #cfc8b9;
+  --border-card: #d8d1c2;
+  --border-subtle: #e1dace;
+  --border-control: #7d786a;
+  --border-control-hover: #625d51;
+  --text-primary: #2c2d26;
+  --text-secondary: #4e5045;
+  --text-muted: #636455;
+  --text-label: #515548;
+  --accent: #306548;
+  --accent-cta-h: #24553b;
+  --accent-pressed: #1c4531;
   --on-accent: #ffffff;
-  --status-good: #17675f;
-  --status-ok: #6d5412;
-  --status-bad: #943a30;
-  --status-extra: #365b7b;
-  --result-good-bg: #e6eee7;
-  --result-bad-bg: #f4e7e2;
-  --shadow-menu: 0 2px 10px rgba(37, 38, 32, 0.12);
-  --shadow-overlay: 0 12px 32px rgba(37, 38, 32, 0.18);
+  --focus-color: #286848;
+  --selection-bg: #e4edd9;
+  --status-good: #245f5a;
+  --status-ok: #775414;
+  --status-bad: #943f36;
+  --status-extra: #695179;
+  --status-good-tint: #e3f1e8;
+  --status-ok-tint: #f6ecd2;
+  --status-bad-tint: #f7e5dc;
+  --status-extra-tint: #efe7f0;
+  --result-good-bg: #e4efe4;
+  --result-bad-bg: #f7e5dd;
+  --on-danger: #ffffff;
+  --heat-0: #efe9dc;
+  --heat-1: #708567;
+  --heat-2: #4c7154;
+  --heat-3: #315b41;
+  --heat-4: #1f422e;
+  --control-disabled-bg: #e3ded1;
+  --control-disabled-fg: #625f53;
+
+  @variant dark-mode {
+    --bg-base: #1d1d19;
+    --bg-surface: #292923;
+    --bg-inset: #35342c;
+    --border: #46453b;
+    --border-card: #4d4c40;
+    --border-subtle: #3c3c33;
+    --border-control: #8c8c7a;
+    --border-control-hover: #b0ad98;
+    --text-primary: #f2f0e5;
+    --text-secondary: #d3d1c2;
+    --text-muted: #b4b3a2;
+    --text-label: #c5c5b3;
+    --accent: #93ce9d;
+    --accent-cta-h: #a8deaf;
+    --accent-pressed: #7eb98a;
+    --on-accent: #1b2d20;
+    --focus-color: #a1dda8;
+    --selection-bg: #303f2f;
+    --status-good: #8dc9bb;
+    --status-ok: #e0c37f;
+    --status-bad: #eda397;
+    --status-extra: #c8b1d2;
+    --status-good-tint: #293d34;
+    --status-ok-tint: #3e3726;
+    --status-bad-tint: #452f2b;
+    --status-extra-tint: #39303f;
+    --result-good-bg: #283a2e;
+    --result-bad-bg: #422e29;
+    --on-danger: #361f18;
+    --heat-0: #302f28;
+    --heat-1: #728665;
+    --heat-2: #90a97b;
+    --heat-3: #abc58f;
+    --heat-4: #cbe5aa;
+    --control-disabled-bg: #36372e;
+    --control-disabled-fg: #a3a494;
+  }
 }
 
-/* No `[data-theme='dark']` block is needed: the `:root` values above are the dark
-   palette, and the light overrides only apply when the theme is `light` (explicit)
-   or `auto` while the system prefers light. */
+:root[data-palette='cool'] {
+  --bg-base: #edf2f5;
+  --bg-surface: #fbfdff;
+  --bg-inset: #dfe7ec;
+  --border: #c2ccd3;
+  --border-card: #cdd6dc;
+  --border-subtle: #d8e0e6;
+  --border-control: #707e89;
+  --border-control-hover: #536674;
+  --text-primary: #202d34;
+  --text-secondary: #40525f;
+  --text-muted: #546572;
+  --text-label: #475b68;
+  --accent: #15674d;
+  --accent-cta-h: #0d553f;
+  --accent-pressed: #094431;
+  --on-accent: #ffffff;
+  --focus-color: #12694e;
+  --selection-bg: #d9ebe4;
+  --status-good: #126368;
+  --status-ok: #745318;
+  --status-bad: #913d43;
+  --status-extra: #415c7d;
+  --status-good-tint: #def0ef;
+  --status-ok-tint: #f4ebd9;
+  --status-bad-tint: #f7e4e6;
+  --status-extra-tint: #e5eaf4;
+  --result-good-bg: #ddeeea;
+  --result-bad-bg: #f4e4e8;
+  --on-danger: #ffffff;
+  --heat-0: #e6ecf0;
+  --heat-1: #65877d;
+  --heat-2: #467064;
+  --heat-3: #275a4a;
+  --heat-4: #104534;
+  --control-disabled-bg: #dce4e9;
+  --control-disabled-fg: #586671;
+
+  @variant dark-mode {
+    --bg-base: #141c22;
+    --bg-surface: #202b32;
+    --bg-inset: #2b373f;
+    --border: #3b4952;
+    --border-card: #45545e;
+    --border-subtle: #313f47;
+    --border-control: #82949f;
+    --border-control-hover: #adc1ca;
+    --text-primary: #eaf1f5;
+    --text-secondary: #c5d2d9;
+    --text-muted: #a8bac4;
+    --text-label: #bbcad3;
+    --accent: #7bd4a6;
+    --accent-cta-h: #9de4bb;
+    --accent-pressed: #61be90;
+    --on-accent: #142e24;
+    --focus-color: #86dfb2;
+    --selection-bg: #233e35;
+    --status-good: #86ccd0;
+    --status-ok: #e2c584;
+    --status-bad: #f0a0a6;
+    --status-extra: #aac3e5;
+    --status-good-tint: #263d42;
+    --status-ok-tint: #403928;
+    --status-bad-tint: #432e34;
+    --status-extra-tint: #2d394c;
+    --result-good-bg: #243d38;
+    --result-bad-bg: #422f35;
+    --on-danger: #341f26;
+    --heat-0: #29343d;
+    --heat-1: #628a7c;
+    --heat-2: #79ac97;
+    --heat-3: #a2ccb5;
+    --heat-4: #c5ebd4;
+    --control-disabled-bg: #303e47;
+    --control-disabled-fg: #a5b5be;
+  }
+}
 
 *,
 *::before,
@@ -490,7 +639,7 @@ body {
 }
 
 .link {
-  color: var(--accent);
+  color: var(--link);
 }
 
 .link:hover {
@@ -535,15 +684,6 @@ p .link {
   transition: background-color var(--transition-fast);
 }
 
-.btn-primary:hover {
-  background-color: var(--accent-cta-h);
-}
-
-.btn-primary:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 /* Compact variant used by the settings save/verification buttons (auto width
    on desktop, full width on phones). */
 .settings-btn-compact {
@@ -571,11 +711,6 @@ p .link {
     background-color var(--transition-fast);
 }
 
-.btn-ghost:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 .btn-ghost:hover:not(:disabled) {
   border-color: var(--border-control-hover);
   background-color: var(--bg-inset);
@@ -594,8 +729,14 @@ p .link {
   transition: background-color 0.15s;
 }
 
+.btn-primary:hover,
 .btn-cta:hover {
   background-color: var(--accent-cta-h);
+}
+
+.btn-primary:active,
+.btn-cta:active {
+  background-color: var(--accent-pressed);
 }
 
 /* The ready action fills its setup column on phones. */
@@ -707,9 +848,11 @@ button.training-start {
   font-weight: 600;
 }
 
-.segmented input:focus-visible + .segmented-item {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+/* WebKit can drop :focus-visible when an arrow key moves focus to the next radio. */
+.segmented input:focus-visible + .segmented-item,
+.segmented[data-arrow-focus] input:focus + .segmented-item {
+  outline: 2px solid var(--focus-color);
+  outline-offset: -2px;
 }
 
 .input,
@@ -722,7 +865,7 @@ button.training-start {
   line-height: 1.35rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-control);
-  background-color: var(--bg-surface);
+  background-color: var(--input-bg);
   color: var(--text-primary);
   transition:
     background-color var(--transition-base),
@@ -745,7 +888,7 @@ button.training-start {
 .select:focus,
 .textarea:focus {
   outline: none;
-  border-color: var(--accent);
+  border-color: var(--focus-color);
 }
 
 /* The halo is for keyboard focus only: clicking a field should not flash a ring. */
@@ -755,15 +898,22 @@ button.training-start {
   box-shadow: var(--focus-ring);
 }
 
+.btn-primary:disabled,
+.btn-cta:disabled,
+.btn-ghost:disabled,
+.btn-icon:disabled,
 .input:disabled,
 .select:disabled,
 .textarea:disabled {
-  opacity: 0.6;
+  color: var(--control-disabled-fg);
+  background-color: var(--control-disabled-bg);
   cursor: not-allowed;
 }
 
-.textarea::placeholder {
-  color: var(--text-muted);
+input::placeholder,
+textarea::placeholder {
+  color: var(--input-placeholder);
+  opacity: 1;
 }
 
 select.input,
@@ -923,7 +1073,7 @@ button:focus-visible,
 a:focus-visible,
 summary:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-color);
   outline-offset: 2px;
 }
 
@@ -1101,7 +1251,7 @@ summary:focus-visible,
 }
 
 .row-link:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-color);
   outline-offset: -2px;
 }
 
@@ -1195,11 +1345,6 @@ summary:focus-visible,
   color: var(--text-primary);
   border-color: var(--border-control-hover);
   background-color: var(--bg-inset);
-}
-
-.btn-icon:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 /* Touch devices get 44px controls regardless of the visual size tier. */

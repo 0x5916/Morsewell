@@ -173,7 +173,7 @@
   }
   .language-options button:focus-visible,
   a:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-color);
     outline-offset: 2px;
   }
   .site-footer--minimal .footer-inner,

@@ -2,7 +2,7 @@ import { getEmailPreferences, getSettings, getUserInfo } from '../api';
 import { apiFetch, assertAuthSessionCurrent, getAuthAccountId, getAuthSession } from '../auth';
 import { readClientCwSettings } from '../cwSync';
 import { LOCALE_PREFERENCE_STORAGE_KEY, normalizeLocalePreference } from '../locale';
-import { readStoredTheme } from '../theme.svelte';
+import { readStoredPalette, readStoredTheme } from '../theme.svelte';
 import { getTrainingOwner, trainingEpoch } from '../training-owner';
 import { attemptToWire } from '../training-wire';
 import type { AttemptEvent, HistorySessionRecord } from '../training/v2/types';
@@ -190,6 +190,7 @@ export async function downloadAccountData(cancel: AbortSignal): Promise<void> {
       email: select(email, 'support product'),
       device: {
         theme: readStoredTheme(),
+        palette: readStoredPalette(),
         language: normalizeLocalePreference(localStorage.getItem(LOCALE_PREFERENCE_STORAGE_KEY)),
         sound: readClientCwSettings()
       }

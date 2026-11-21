@@ -92,7 +92,8 @@
   }
 
   .grid-cell:disabled {
-    opacity: 0.5;
+    background-color: var(--control-disabled-bg);
+    color: var(--control-disabled-fg);
     cursor: not-allowed;
   }
 

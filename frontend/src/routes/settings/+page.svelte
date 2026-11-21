@@ -63,6 +63,7 @@
   import ErrorAlert from '#lib/components/ErrorAlert.svelte';
   import GuestNotice from '#lib/components/GuestNotice.svelte';
   import SaveButton from '#lib/components/SaveButton.svelte';
+  import SegmentedControl from '#lib/components/SegmentedControl.svelte';
   import EmailPreferences from '#lib/components/settings/EmailPreferences.svelte';
   import SettingsPassword from '#lib/components/settings/SettingsPassword.svelte';
   import SettingsGoogleLink from '#lib/components/settings/SettingsGoogleLink.svelte';
@@ -71,7 +72,7 @@
   import SettingsAccountData from '#lib/components/settings/SettingsAccountData.svelte';
   import { clearDeletedAccountData, resetAccountProgress } from '#lib/account-data.ts';
   import { downloadAccountData } from '#lib/data/account-export.ts';
-  import { themePreference, setTheme, type Theme } from '#lib/theme.svelte.ts';
+  import { themePreference, setPalette, setTheme } from '#lib/theme.svelte.ts';
   import { Volume2 } from '@lucide/svelte';
   import * as m from '#lib/paraglide/messages.js';
 
@@ -655,18 +656,28 @@
   <section class="panel panel--ledger" id="preferences" aria-labelledby="preferences-title">
     {@render sectionHeading(detail, m.settings_appearance_title(), 'preferences-title')}
     <div class="settings-form">
-      <label class="field">
-        <span class="label-text">{m.settings_theme_label()}</span>
-        <select
-          class="select"
-          value={themePreference.value}
-          onchange={(event) => setTheme(event.currentTarget.value as Theme)}
-        >
-          <option value="auto">{m.theme_auto()}</option>
-          <option value="light">{m.theme_light()}</option>
-          <option value="dark">{m.theme_dark()}</option>
-        </select>
-      </label>
+      <SegmentedControl
+        name="palette"
+        label={m.settings_palette_label()}
+        options={[
+          { value: 'neutral', label: m.palette_neutral() },
+          { value: 'warm', label: m.palette_warm() },
+          { value: 'cool', label: m.palette_cool() }
+        ]}
+        value={themePreference.palette}
+        onchange={setPalette}
+      />
+      <SegmentedControl
+        name="theme"
+        label={m.settings_theme_label()}
+        options={[
+          { value: 'auto', label: m.theme_system() },
+          { value: 'light', label: m.theme_light() },
+          { value: 'dark', label: m.theme_dark() }
+        ]}
+        value={themePreference.value}
+        onchange={setTheme}
+      />
       <label class="field">
         <span class="label-text">{m.settings_language_label()}</span>
         <select

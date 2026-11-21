@@ -45,14 +45,14 @@
   .progress-bar-track {
     flex: 1;
     height: 4px;
-    background-color: var(--border);
+    background-color: var(--progress-track);
     border-radius: var(--radius-xs);
     overflow: hidden;
   }
 
   .progress-bar-fill {
     height: 100%;
-    background-color: var(--learning-current);
+    background-color: var(--progress-fill);
     transition: width var(--transition-base) var(--ease-smooth);
   }
 

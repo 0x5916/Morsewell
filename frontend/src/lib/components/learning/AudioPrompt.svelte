@@ -183,6 +183,10 @@
     background-color: var(--accent-cta-h);
   }
 
+  .play-button:active {
+    background-color: var(--accent-pressed);
+  }
+
   .replay-button {
     background-color: var(--bg-surface);
     color: var(--text-primary);

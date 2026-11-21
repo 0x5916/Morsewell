@@ -273,12 +273,12 @@ test.describe('mobile Settings directory', () => {
       sectionNames.filter((n) => n !== 'Account data')
     );
     await directory.getByRole('link', { name: 'Appearance & language' }).click();
-    await expect(page.getByRole('combobox', { name: 'Theme', exact: true })).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Appearance mode', exact: true })).toBeVisible();
     const opened = await page.evaluate(() => performance.timeOrigin);
     await page.goto('/en/settings#device-recovery');
     expect(await page.evaluate(() => performance.timeOrigin)).toBe(opened);
     await expect(page.locator('#device-recovery h3')).toBeInViewport();
-    await expect(page.getByRole('combobox', { name: 'Theme', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('group', { name: 'Appearance mode', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Delete account' })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true

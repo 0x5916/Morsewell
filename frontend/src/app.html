@@ -17,15 +17,18 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="theme-color" content="#F7F8F3" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#15191B" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#F4F4F1" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#191B1C" media="(prefers-color-scheme: dark)" />
     <script>
-      // Applied before first paint to avoid a theme flash. The key must match
-      // UI_STORAGE_KEYS.theme in src/lib/storageKeys.ts.
+      // Restore before CSS and hydration. Keys match UI_STORAGE_KEYS in storageKeys.ts.
       try {
         const theme = localStorage.getItem('theme');
+        const palette = localStorage.getItem('palette');
         if (theme === 'light' || theme === 'dark') {
-          document.documentElement.setAttribute('data-theme', theme);
+          document.documentElement.dataset.theme = theme;
+        }
+        if (palette === 'warm' || palette === 'cool') {
+          document.documentElement.dataset.palette = palette;
         }
       } catch {
         // Use the system appearance when the browser blocks storage.
@@ -35,5 +38,33 @@
   </head>
   <body data-sveltekit-preload-data="hover">
     <div style="display: contents">%sveltekit.body%</div>
+    <script>
+      // Align prerendered Settings radios with the first paint, before hydration.
+      {
+        const root = document.documentElement;
+        const saved = {
+          theme: root.dataset.theme || 'auto',
+          palette: root.dataset.palette || 'neutral'
+        };
+        for (const radio of document.querySelectorAll('#preferences input[type=radio]')) {
+          if (Object.hasOwn(saved, radio.name)) radio.checked = radio.value === saved[radio.name];
+        }
+
+        // Use the resolved canvas for the browser chrome, including live System changes.
+        const metaColors = document.querySelectorAll('meta[name=theme-color]');
+        const syncChrome = () => {
+          const style = getComputedStyle(root);
+          if (!style.getPropertyValue('--bg-base')) return;
+          for (const meta of metaColors) meta.content = style.backgroundColor;
+        };
+        syncChrome();
+        window.addEventListener('load', syncChrome, { once: true });
+        new MutationObserver(syncChrome).observe(root, {
+          attributes: true,
+          attributeFilter: ['data-theme', 'data-palette']
+        });
+        matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncChrome);
+      }
+    </script>
   </body>
 </html>

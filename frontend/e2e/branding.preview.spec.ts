@@ -107,11 +107,11 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(navbar.locator('img')).toHaveCount(0);
       await expect(page.locator('body')).toHaveCSS(
         'background-color',
-        theme === 'dark' ? 'rgb(21, 25, 27)' : 'rgb(247, 248, 243)'
+        theme === 'dark' ? 'rgb(25, 27, 28)' : 'rgb(244, 244, 241)'
       );
       await expect(page.locator('body')).toHaveCSS(
         'color',
-        theme === 'dark' ? 'rgb(237, 241, 240)' : 'rgb(28, 50, 40)'
+        theme === 'dark' ? 'rgb(235, 239, 235)' : 'rgb(37, 44, 40)'
       );
       const brand = await navbar.locator('.navbar-brand').boundingBox();
       const learn = await navbar.getByRole('link', { name: 'Learn', exact: true }).boundingBox();
@@ -149,9 +149,9 @@ test('guest account menu and system theme remain available on mobile', async ({ 
   await page.goto('/en');
   const account = page.locator('.navbar-account .navbar-user-btn');
   await expect(account).toBeVisible();
-  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(21, 25, 27)');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(25, 27, 28)');
   await page.emulateMedia({ colorScheme: 'light' });
-  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(247, 248, 243)');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(244, 244, 241)');
   await account.focus();
   await page.keyboard.press('Space');
   await expect(page.getByRole('menuitem', { name: 'Login', exact: true })).toHaveAttribute(

@@ -99,7 +99,7 @@
   .practice-link {
     justify-content: center;
     gap: var(--space-2);
-    color: var(--accent);
+    color: var(--link);
     font-size: var(--text-sm);
   }
   .practice-link :global(svg) {

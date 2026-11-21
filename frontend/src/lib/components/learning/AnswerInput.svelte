@@ -132,7 +132,7 @@
     width: min(100%, calc(var(--answer-length) * 1.1em + var(--space-6)));
     min-width: 5.5rem;
     height: 5.5rem;
-    background-color: var(--bg-surface);
+    background-color: var(--input-bg);
     border: 2px solid var(--border-control);
     border-radius: var(--radius-sm);
     color: var(--text-primary);
@@ -145,13 +145,14 @@
   }
 
   .answer-field:focus {
-    border-color: var(--learning-current);
+    border-color: var(--focus-color);
     outline: none;
     box-shadow: var(--focus-ring);
   }
 
   .answer-field:disabled {
-    opacity: 0.5;
+    background-color: var(--control-disabled-bg);
+    color: var(--control-disabled-fg);
     cursor: not-allowed;
   }
 

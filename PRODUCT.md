@@ -88,7 +88,7 @@ Morsewell should feel **clear, approachable, focused, and trustworthy**.
 - **Trust:** Honest progress reporting and no exaggerated claims.
 - **Openness:** Free, independent, Apache-2.0 open source, without advertising or third-party analytics.
 
-Use the approved Forest Jade identity: light primary `#27694E`, background `#F7F8F3`, surface `#FFFFFF`, text `#1C3228`; dark primary `#85D1A4`, neutral charcoal background `#15191B`, surface `#22272A`, text `#EDF1F0`. Gold `#EAC384` is a sparse decorative accent. Semantic tokens live in [app.css](frontend/src/app.css). Preserve the original paddle artwork and favicon geometry and colors; the navigation wordmark is text-only. Use existing approved Penpot components and visual conventions as the baseline. Detailed visual rules belong in the design system.
+Forest Jade is the primary action color across three palettes. Neutral (Jade & Graphite) and System appearance are the defaults. Warm (Jade & Linen) and Cool (Jade & Slate) offer alternate surface tones in both light and dark modes. Gold is a sparse decorative accent. The exact semantic colors live in [app.css](frontend/src/app.css). Preserve the original paddle artwork and favicon geometry and colors; the navigation wordmark is text-only. Use existing approved Penpot components and visual conventions as the baseline. Detailed visual rules belong in the design system.
 
 ## Evidence on Hand
 

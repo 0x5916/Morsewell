@@ -358,7 +358,7 @@
       color: var(--text-primary);
     }
     .section-links a[aria-current] {
-      background: color-mix(in srgb, var(--accent) 12%, var(--bg-base));
+      background: var(--selection-bg);
       box-shadow: inset 3px 0 var(--accent);
       color: var(--accent);
       font-weight: 600;
