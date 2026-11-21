@@ -585,14 +585,14 @@
   /* Timing line: the 2px hairline the playhead runs along. */
   .player-playhead {
     height: 2px;
-    background: var(--border);
+    background: var(--progress-track);
     overflow: hidden;
   }
 
   .player-playhead-fill {
     height: 100%;
     width: 0;
-    background: var(--accent);
+    background: var(--progress-fill);
     transition: width 120ms linear;
   }
 

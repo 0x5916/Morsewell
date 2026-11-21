@@ -227,7 +227,7 @@
   .accuracy-bar {
     display: block;
     height: 6px;
-    background: var(--border);
+    background: var(--progress-track);
     overflow: hidden;
     border-radius: var(--radius-xs);
   }

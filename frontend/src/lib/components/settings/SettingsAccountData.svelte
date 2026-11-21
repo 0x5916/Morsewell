@@ -454,7 +454,7 @@
   }
   .confirm {
     background: var(--danger);
-    color: var(--bg-surface);
+    color: var(--on-danger);
     transition: none;
   }
   .confirm:hover {
@@ -462,9 +462,9 @@
   }
   .confirm:disabled {
     opacity: 1;
-    background: var(--bg-inset);
+    background: var(--control-disabled-bg);
     border-color: var(--border);
-    color: var(--text-secondary);
+    color: var(--control-disabled-fg);
   }
   @media (max-width: 720px) {
     .data-row {

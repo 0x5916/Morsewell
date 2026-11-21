@@ -89,7 +89,7 @@
   }
 
   .status-new .cell-status-icon {
-    color: var(--text-muted);
+    color: var(--learning-new);
   }
 
   .status-stable {

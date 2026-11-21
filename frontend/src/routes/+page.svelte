@@ -232,6 +232,9 @@
   .training-link.training-link--recommended:hover {
     background: var(--accent-cta-h);
   }
+  .training-link.training-link--recommended:active {
+    background: var(--accent-pressed);
+  }
   .training-link.training-link--recommended :global(svg),
   .training-link.training-link--recommended .lesson-hint {
     color: var(--on-accent);

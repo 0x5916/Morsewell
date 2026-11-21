@@ -121,8 +121,8 @@ describe('Morsewell PWA assets', () => {
     expect(manifest.start_url).toBe('/');
     expect(manifest.scope).toBe('/');
     expect(manifest.display).toBe('standalone');
-    expect(manifest.background_color).toBe('#F7F8F3');
-    expect(manifest.theme_color).toBe('#15191B');
+    expect(manifest.background_color).toBe('#F4F4F1');
+    expect(manifest.theme_color).toBe('#191B1C');
 
     expect(manifest.icons).toEqual([
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },

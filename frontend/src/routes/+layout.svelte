@@ -42,7 +42,7 @@
   import ThemeButton from '#lib/components/ThemeButton.svelte';
   import SiteFooter from '#lib/components/SiteFooter.svelte';
   import MigrationBanner from '#lib/components/migration/MigrationBanner.svelte';
-  import { applyTheme, readStoredTheme } from '#lib/theme.svelte.ts';
+  import { restoreAppearance } from '#lib/theme.svelte.ts';
   import { navigationDestination } from '#lib/navigation.ts';
   import { ProfileIcon, ProgressIcon } from '#lib/navigation-icons.ts';
   import * as m from '#lib/paraglide/messages.js';
@@ -121,8 +121,9 @@
     });
   });
 
+  restoreAppearance();
+
   onMount(() => {
-    applyTheme(readStoredTheme());
     const stopTraining = initializeTrainingSync();
     const stopLearning = initializeLearningSync();
     return () => {
@@ -146,8 +147,8 @@
   }
 
   function handleStorage(event: StorageEvent) {
-    if (event.key === null || event.key === UI_STORAGE_KEYS.theme) {
-      applyTheme(readStoredTheme());
+    if (event.key === null || Object.values(UI_STORAGE_KEYS).some((key) => key === event.key)) {
+      restoreAppearance();
     }
     if (event.key === null || Object.values(AUTH_STORAGE_KEYS).some((key) => key === event.key)) {
       initAuth();

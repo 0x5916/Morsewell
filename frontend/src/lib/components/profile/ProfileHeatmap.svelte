@@ -508,11 +508,9 @@
     height: var(--heatmap-cell-size);
     border-radius: var(--radius-xs);
     border: 1px solid color-mix(in srgb, var(--border), transparent 45%);
-    background: var(--bg-inset);
+    background: var(--heat-0);
     display: inline-block;
   }
-  /* Level ramp derived from the accent so it matches the brand in both themes
-     (the raw GitHub greens were dark-only and clashed on a white surface). */
   .profile-heatmap-cell.level-1,
   .profile-heatmap-cell.level-2,
   .profile-heatmap-cell.level-3,
@@ -520,16 +518,16 @@
     border-color: transparent;
   }
   .profile-heatmap-cell.level-1 {
-    background: color-mix(in srgb, var(--accent-cta) 22%, var(--bg-inset));
+    background: var(--heat-1);
   }
   .profile-heatmap-cell.level-2 {
-    background: color-mix(in srgb, var(--accent-cta) 45%, var(--bg-inset));
+    background: var(--heat-2);
   }
   .profile-heatmap-cell.level-3 {
-    background: color-mix(in srgb, var(--accent-cta) 70%, var(--bg-inset));
+    background: var(--heat-3);
   }
   .profile-heatmap-cell.level-4 {
-    background: var(--accent-cta);
+    background: var(--heat-4);
   }
   .profile-heatmap-cell.is-future {
     opacity: 0.45;

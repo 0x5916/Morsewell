@@ -52,7 +52,11 @@ let archive: Blob | undefined;
 beforeEach(() => {
   vi.mocked(getTrainingOwner).mockReturnValue(owner);
   vi.mocked(assertAuthSessionCurrent).mockReset();
-  const localStorage = { getItem: (key: string) => (key === 'theme' ? 'dark' : null) };
+  const preferences = new Map([
+    ['theme', 'dark'],
+    ['palette', 'warm']
+  ]);
+  const localStorage = { getItem: (key: string) => preferences.get(key) ?? null };
   vi.stubGlobal('localStorage', localStorage);
   vi.stubGlobal('window', { localStorage, indexedDB: new IDBFactory() });
   vi.stubGlobal('document', { createElement: () => anchor });
@@ -101,7 +105,7 @@ it('downloads every cloud page and only this account’s additional local record
     preferences: {
       sound: { target_daily_minutes: 10 },
       email: { support: true },
-      device: { theme: 'dark' }
+      device: { theme: 'dark', palette: 'warm' }
     },
     learning_progress: {
       attempts: [{ id: 'synced' }],

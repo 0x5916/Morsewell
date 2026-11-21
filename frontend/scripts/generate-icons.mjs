@@ -35,7 +35,8 @@ const smallSource = path.join(sourceDir, 'morsewell-icon-small.svg');
 // --brand-only refreshes social metadata without writing any icon assets.
 const PAPER = '#F3F2ED';
 const css = await readFile(path.join(root, 'src/app.css'), 'utf8');
-const lightPalette = css.slice(css.indexOf("[data-theme='light'] {"));
+const neutralPalette = css.match(/:root\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+const [lightPalette, darkPalette] = neutralPalette.split('@variant dark-mode');
 function token(name, source = lightPalette) {
   const value = source.match(new RegExp(`--${name}:\\s*(#[a-fA-F0-9]+);`))?.[1];
   if (!value) throw new Error(`Missing brand token: ${name}`);
@@ -45,7 +46,7 @@ const SOCIAL_PAPER = token('bg-base');
 const INK = token('text-primary');
 const MUTED = token('text-secondary');
 const FOREST = token('accent');
-const GOLD = token('brand-gold', css);
+const GOLD = token('brand-gold');
 const PAPER_RGB = { r: 0xf3, g: 0xf2, b: 0xed };
 
 // The small artwork's supplied viewBox is its optical crop. The favicon rim is
@@ -297,7 +298,7 @@ async function generate() {
     scope: '/',
     display: 'standalone',
     background_color: SOCIAL_PAPER.toUpperCase(),
-    theme_color: '#15191B',
+    theme_color: token('bg-base', darkPalette).toUpperCase(),
     categories: ['education'],
     icons: [
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },

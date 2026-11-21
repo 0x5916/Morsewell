@@ -294,7 +294,7 @@
     scroll-margin-block: 6rem;
   }
   .character-scroll:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-color);
     outline-offset: 4px;
   }
   .character-content {

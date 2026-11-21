@@ -513,12 +513,12 @@
     display: block;
     height: 4px;
     margin-top: var(--space-2);
-    background: var(--border);
+    background: var(--progress-track);
   }
   .accuracy-bar > span {
     display: block;
     height: 100%;
-    background: var(--accent);
+    background: var(--progress-fill);
   }
   @media (min-width: 680px) {
     .history-row {

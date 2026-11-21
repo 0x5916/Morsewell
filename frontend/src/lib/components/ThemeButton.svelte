@@ -4,7 +4,7 @@
   import * as m from '#lib/paraglide/messages.js';
 
   const modes = {
-    auto: { icon: Monitor, label: m.theme_auto, next: 'light' },
+    auto: { icon: Monitor, label: m.theme_system, next: 'light' },
     light: { icon: Sun, label: m.theme_light, next: 'dark' },
     dark: { icon: Moon, label: m.theme_dark, next: 'auto' }
   } as const;

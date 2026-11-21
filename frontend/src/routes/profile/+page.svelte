@@ -292,7 +292,7 @@
   }
 
   .profile-settings:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-color);
     outline-offset: 2px;
   }
 
