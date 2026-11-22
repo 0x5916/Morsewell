@@ -325,7 +325,7 @@
     justify-content: space-between;
     flex-wrap: wrap;
     gap: var(--space-2);
-    margin-bottom: var(--space-8);
+    margin-bottom: min(var(--space-8), 5vw);
     --tip-trigger-size: 48px;
   }
   .practice-title {

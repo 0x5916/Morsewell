@@ -1,59 +1,8 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import de from '../messages/de.json' with { type: 'json' };
 import en from '../messages/en.json' with { type: 'json' };
 import { readGuidedCheckpoint, resetToHome } from './helpers';
-
-async function installDeterministicAudioClock(page: Page) {
-  await page.addInitScript(() => {
-    class FakeParam {
-      value = 0;
-      setValueAtTime() {}
-      linearRampToValueAtTime() {}
-    }
-    class FakeGain {
-      gain = new FakeParam();
-      connect() {}
-      disconnect() {}
-    }
-    class FakeOscillator {
-      frequency = new FakeParam();
-      onended: (() => void) | null = null;
-      connect() {}
-      disconnect() {}
-      start() {}
-      stop(when = 0) {
-        setTimeout(() => this.onended?.(), Math.max(0, when * 1000));
-      }
-    }
-    class FakeAudioContext {
-      state = 'running';
-      currentTime = 0;
-      destination = {};
-      baseLatency = 0;
-      outputLatency = 0;
-      createOscillator() {
-        return new FakeOscillator();
-      }
-      createGain() {
-        return new FakeGain();
-      }
-      async resume() {
-        this.state = 'running';
-      }
-      async suspend() {
-        this.state = 'suspended';
-      }
-      async close() {
-        this.state = 'closed';
-      }
-    }
-    Object.defineProperty(window, 'AudioContext', {
-      configurable: true,
-      writable: true,
-      value: FakeAudioContext
-    });
-  });
-}
+import { installDeterministicAudioClock } from './audio-clock';
 
 test('a locked direct lesson URL shows recovery and preserves the course gate', async ({
   page

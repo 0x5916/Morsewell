@@ -526,6 +526,7 @@
     }
     .compact-setup p {
       margin: 0;
+      line-height: var(--leading-snug);
     }
     .compact-characters {
       color: var(--text-secondary);

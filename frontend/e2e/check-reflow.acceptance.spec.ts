@@ -1,7 +1,12 @@
 import { expect, test } from '@playwright/test';
 import de from '../messages/de.json' with { type: 'json' };
 import en from '../messages/en.json' with { type: 'json' };
+import { installDeterministicAudioClock } from './audio-clock';
 import { resetToHome } from './helpers';
+
+test.beforeEach(async ({ page }) => {
+  await installDeterministicAudioClock(page);
+});
 
 for (const { width, locale, labels } of [
   { width: 390, locale: 'de', labels: de },
