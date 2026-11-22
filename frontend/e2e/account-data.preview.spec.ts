@@ -460,11 +460,19 @@ test('an expired session cannot submit an armed account deletion', async ({ page
   const { section, dialog, deletes } = await settings(page, true);
   await section.getByRole('button', { name: 'Delete account' }).click();
   await dialog.getByLabel('Current Password').fill('confirmed');
-  await page.route('**/v1/auth/refresh', (route) =>
-    route.fulfill({ status: 401, json: { code: 'INVALID_TOKEN' } })
-  );
-  await page.clock.setFixedTime(new Date(Date.now() + 2 * 60 * 60 * 1000));
-  await dialog.getByRole('button', { name: 'Delete account' }).click();
+  // A background request can start the shared refresh as soon as the clock advances.
+  const rejectRefresh = Promise.withResolvers<void>();
+  await page.route('**/v1/auth/refresh', async (route) => {
+    await rejectRefresh.promise;
+    await route.fulfill({ status: 401, json: { code: 'INVALID_TOKEN' } });
+  });
+  try {
+    await page.clock.setFixedTime(new Date(Date.now() + 2 * 60 * 60 * 1000));
+    await dialog.getByRole('button', { name: 'Delete account' }).click();
+    await expect(dialog).toHaveAttribute('aria-busy', 'true');
+  } finally {
+    rejectRefresh.resolve();
+  }
   await expect(section).toHaveCount(0);
   await expect(dialog).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem('access_token'))).toBeNull();
