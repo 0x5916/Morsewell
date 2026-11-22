@@ -10,7 +10,7 @@
  * - Single completion effect containing the full SessionSummary.
  */
 
-import { evaluateProgression } from './progression';
+import { evaluateProgression, sessionProgressionFields } from './progression';
 import { calculateMedian } from './statistics';
 import type { AttemptEvent, Prompt, SessionSummary } from './types';
 
@@ -33,6 +33,8 @@ export interface GuidedSessionState {
   currentPromptIndex: number; // 0-based
   currentPrompt: Prompt | null;
   replayCount: number;
+  /** Older checkpoints may omit whether playback has been requested. */
+  promptStarted?: boolean;
   /** Epoch milliseconds when prompt audio ended and input became active. */
   answerReadyAtMs: number | null;
   /** Attempts successfully scored in this session. */
@@ -54,7 +56,7 @@ export type GuidedSessionEvent =
   | { type: 'submit-answer'; attempt: AttemptEvent }
   | { type: 'continue' }
   | { type: 'pause' }
-  | { type: 'resume' }
+  | { type: 'resume'; pausedForMs?: number }
   | { type: 'abandon' };
 
 export type GuidedSessionEffect =
@@ -94,6 +96,7 @@ export function createGuidedSession(options: CreateGuidedSessionOptions): Guided
     currentPromptIndex: initialIndex,
     currentPrompt,
     replayCount: 0,
+    promptStarted: false,
     answerReadyAtMs: null,
     attempts: options.initialAttempts ?? [],
     lastAttempt: null,
@@ -153,6 +156,7 @@ export function guidedSessionTransition(
         state: {
           ...state,
           phase: 'playing',
+          promptStarted: true,
           audioError: null
         },
         effects: [{ kind: 'play-audio', prompt: state.currentPrompt }]
@@ -189,6 +193,7 @@ export function guidedSessionTransition(
         state: {
           ...state,
           phase: 'playing',
+          promptStarted: true,
           replayCount: state.replayCount + 1,
           audioError: null
         },
@@ -290,9 +295,7 @@ export function guidedSessionTransition(
           medianLatencyMs,
           totalReplays,
           strongCharacters: [],
-          weakCharacters: progression.weakCharacters,
-          unlockedNextStep: progression.canUnlock,
-          progressionReasonCode: progression.reasonCode,
+          ...sessionProgressionFields(progression),
           completedAt: nowIso
         };
 
@@ -321,6 +324,7 @@ export function guidedSessionTransition(
           currentPromptIndex: nextIndex,
           currentPrompt: nextPrompt,
           replayCount: 0,
+          promptStarted: false,
           answerReadyAtMs: null,
           lastAttempt: null,
           audioError: null
@@ -366,6 +370,10 @@ export function guidedSessionTransition(
         state: {
           ...state,
           phase: resumePhase,
+          answerReadyAtMs:
+            resumePhase === 'answering' && state.answerReadyAtMs !== null
+              ? state.answerReadyAtMs + (event.pausedForMs ?? 0)
+              : state.answerReadyAtMs,
           pausedFromPhase: null
         },
         effects: []

@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { X, Check, Minus, Plus, CircleAlert } from '@lucide/svelte';
+  import { X, Check, CircleAlert } from '@lucide/svelte';
   import { dialogFocusables, dialogFocusTarget } from './dialog-focus';
-  import { LESSONS } from '#lib/training/sequence.ts';
-  import { scoreGrade, type DiffToken } from '#lib/score.ts';
+  import { scoreGrade, type PassageComparison } from '#lib/score.ts';
+  import { passageCorrections } from './practice/passage-corrections';
   import { formatPercent } from '#lib/format.ts';
   import * as m from '#lib/paraglide/messages.js';
 
   interface Props {
     result: number;
-    diffTokens: DiffToken[];
+    comparison: PassageComparison;
     /** Lesson the result belongs to (shown in the panel header area). */
     lessonNum: number;
     contentLabel?: string;
@@ -24,7 +24,7 @@
 
   let {
     result,
-    diffTokens,
+    comparison,
     lessonNum,
     contentLabel,
     sourceText,
@@ -37,17 +37,16 @@
   }: Props = $props();
 
   let grade = $derived(scoreGrade(result));
-  let scoreText = $derived(
-    grade === 'good'
-      ? m.practice_score_great()
-      : grade === 'ok'
-        ? m.trainer_score_good()
-        : m.trainer_score_bad()
-  );
   let pct = $derived(formatPercent(result));
   let savePending = $derived(persistenceStatus === 'saving' || persistenceStatus === 'failed');
 
+  const corrections = $derived(passageCorrections(comparison.groups));
   const titleId = $props.id();
+  // A saved draft may end halfway through an emoji at the editor's UTF-16 length limit.
+  const symbolLabel = (text: string) =>
+    text === ' '
+      ? m.practice_diff_space()
+      : text.replace(/\p{Surrogate}/gu, () => m.practice_diff_incomplete_symbol());
 
   /**
    * Keep Tab inside the panel and close on Escape, returning focus to whatever
@@ -124,93 +123,121 @@
       </button>
     </header>
 
+    {#if persistenceStatus === 'failed'}
+      <div
+        class="save-status save-failure"
+        role="alert"
+        {@attach (notice) => {
+          notice.closest('.overlay-panel')?.scrollTo({ top: 0 });
+        }}
+      >
+        <p><CircleAlert size={16} aria-hidden="true" />{m.practice_history_failed()}</p>
+        <button type="button" class="btn-primary" onclick={onRetrySave}
+          >{m.lesson_retry_save()}</button
+        >
+      </div>
+    {/if}
+
     <div class="overlay-score overlay-{grade}">
       <p class="overlay-pct">{pct}</p>
       <div class="overlay-score-body">
-        <p class="overlay-grade">{scoreText}</p>
+        <p class="overlay-grade">{m.practice_passage_accuracy()}</p>
         <p class="overlay-rule">
-          {contentLabel ??
-            m.home_lesson_title({
-              step: lessonNum,
-              characters: (LESSONS[lessonNum - 1] ?? '').split('').join(', ')
-            })}
+          {contentLabel ?? m.practice_history_groups({ step: lessonNum })}
         </p>
       </div>
     </div>
 
+    <section class="overlay-diff-section">
+      <h3 class="diff-count">
+        {comparison.differences === 0
+          ? m.practice_diff_match()
+          : comparison.usesUnicodeUnits
+            ? m.practice_diff_scored_count({ count: comparison.differences })
+            : comparison.differences === 1
+              ? m.practice_diff_one()
+              : m.practice_diff_count({ count: comparison.differences })}
+      </h3>
+      {#if corrections.length}
+        <table class="corrections">
+          <thead
+            ><tr
+              ><th scope="col">{m.practice_diff_sent()}</th><th scope="col"
+                >{m.practice_diff_copied()}</th
+              ></tr
+            ></thead
+          >
+          <tbody>
+            {#each corrections as row, index (index)}
+              {#if row.kind === 'omission'}
+                <tr
+                  ><td colspan="2">
+                    <details>
+                      <summary>{m.practice_diff_omitted_run({ count: row.count })}</summary>
+                      <div class="omitted-groups">
+                        {#each row.groups as group, groupIndex (groupIndex)}
+                          <span
+                            >{#each group as token, i (i)}<span
+                                class:word-space={token.ref === ' '}
+                                role="img"
+                                aria-label={m.practice_diff_missing({
+                                  text: symbolLabel(token.ref)
+                                })}>{symbolLabel(token.ref)}</span
+                              >{/each}</span
+                          >
+                        {/each}
+                      </div>
+                    </details>
+                  </td></tr
+                >
+              {:else}
+                <tr class="diff-group">
+                  <td
+                    >{#each row.tokens as token, i (i)}<span
+                        class:changed={token.type !== 'correct'}
+                        class:word-space={token.ref === ' '}>{symbolLabel(token.ref) || '·'}</span
+                      >{/each}</td
+                  >
+                  <td
+                    >{#each row.tokens as token, i (i)}
+                      {@const sent = symbolLabel(token.ref)}
+                      {@const copied = symbolLabel(token.inp)}
+                      {#if token.type === 'correct'}{copied}{:else}<span
+                          class="changed"
+                          class:word-space={token.inp === ' '}
+                          role="img"
+                          aria-label={token.type === 'missing'
+                            ? m.practice_diff_missing({ text: sent })
+                            : token.type === 'extra'
+                              ? m.practice_diff_extra({ text: copied })
+                              : m.practice_diff_substitution({ entered: copied, expected: sent })}
+                          >{copied || '·'}</span
+                        >{/if}
+                    {/each}</td
+                  >
+                </tr>
+              {/if}
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+    </section>
     <details class="overlay-source">
       <summary>{m.trainer_source_label()}</summary>
-      <p class="quote-text">{sourceText}</p>
+      <p class="quote-text">{symbolLabel(sourceText)}</p>
+    </details>
+    <details class="overlay-source">
+      <summary>{m.practice_score_method()}</summary>
+      <p class="overlay-rule">
+        {comparison.usesUnicodeUnits
+          ? m.practice_score_unicode_explanation()
+          : m.practice_score_explanation()}
+      </p>
     </details>
 
-    <section class="overlay-diff-section">
-      <div class="overlay-diff-header">
-        <h3 class="card-title">{m.trainer_diff_title()}</h3>
-      </div>
-      <div class="diff-tokens overlay-diff-tokens">
-        {#each diffTokens as tok, i (i)}
-          {#if tok.type === 'correct'}
-            <span
-              class="diff-token diff-correct"
-              role="img"
-              aria-label={m.practice_diff_correct({ text: tok.ref })}
-            >
-              <Check size={12} aria-hidden="true" />{tok.ref}
-            </span>
-          {:else if tok.type === 'substitution'}
-            <span
-              class="diff-token diff-sub"
-              role="img"
-              title={m.overlay_diff_expected({ char: tok.ref })}
-              aria-label={m.practice_diff_substitution({ entered: tok.inp, expected: tok.ref })}
-              ><X size={12} aria-hidden="true" />{tok.inp}<span class="diff-expected">
-                ({tok.ref})</span
-              ></span
-            >
-          {:else if tok.type === 'missing'}
-            <span
-              class="diff-token diff-missing"
-              role="img"
-              title={m.overlay_diff_expected({ char: tok.ref })}
-              aria-label={m.practice_diff_missing({ text: tok.ref })}
-              ><Minus size={12} aria-hidden="true" />{tok.ref}</span
-            >
-          {:else if tok.type === 'extra'}
-            <span
-              class="diff-token diff-extra"
-              role="img"
-              aria-label={m.practice_diff_extra({ text: tok.inp })}
-            >
-              <Plus size={12} aria-hidden="true" />{tok.inp}
-            </span>
-          {/if}
-        {/each}
-      </div>
-      <div class="diff-legend">
-        <span class="diff-token diff-correct"
-          ><Check size={12} aria-hidden="true" />{m.trainer_diff_legend_correct()}</span
-        >
-        <span class="diff-token diff-sub"
-          ><X size={12} aria-hidden="true" />{m.trainer_diff_legend_sub()}</span
-        >
-        <span class="diff-token diff-missing"
-          ><Minus size={12} aria-hidden="true" />{m.trainer_diff_legend_missing()}</span
-        >
-        <span class="diff-token diff-extra"
-          ><Plus size={12} aria-hidden="true" />{m.trainer_diff_legend_extra()}</span
-        >
-      </div>
-    </section>
-
-    {#if persistenceStatus}
-      <div class="overlay-source" role={persistenceStatus === 'failed' ? 'alert' : 'status'}>
-        {#if persistenceStatus === 'failed'}
-          <CircleAlert size={16} aria-hidden="true" />
-          <p>{m.practice_history_failed()}</p>
-          <button type="button" class="btn-primary" onclick={onRetrySave}
-            >{m.lesson_retry_save()}</button
-          >
-        {:else if persistenceStatus === 'saved'}
+    {#if persistenceStatus && persistenceStatus !== 'failed'}
+      <div class="save-status" role="status">
+        {#if persistenceStatus === 'saved'}
           <Check size={16} aria-hidden="true" />
           <p>{m.practice_history_saved()}</p>
         {:else}
@@ -240,7 +267,7 @@
 </dialog>
 
 <style>
-  .overlay-source summary {
+  .overlay-panel summary {
     cursor: pointer;
     min-height: var(--answer-target-min);
     padding-block: var(--space-3);
@@ -260,7 +287,7 @@
     max-width: none;
     max-height: none;
     margin: 0;
-    padding: var(--space-4);
+    padding: min(var(--space-4), 3vw);
     border: 0;
     color: inherit;
     background: transparent;
@@ -273,6 +300,7 @@
   }
 
   .overlay-panel {
+    container-type: inline-size;
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
@@ -291,8 +319,8 @@
   }
 
   .overlay-head {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
@@ -301,18 +329,18 @@
   }
 
   .overlay-title {
-    flex: 1 1 12rem;
     min-width: 0;
     margin: 0;
     font-size: var(--text-lg);
+    line-height: var(--leading-snug);
     font-weight: 600;
     color: var(--text-primary);
   }
 
   /* Score strip: a readout, not a hero. */
   .overlay-score {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: var(--space-4);
     padding: var(--space-4) var(--space-5);
@@ -334,7 +362,7 @@
     margin: 0;
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 2.25rem;
+    font-size: var(--text-2xl);
     font-weight: 500;
     line-height: 1;
   }
@@ -353,7 +381,6 @@
 
   .overlay-score-body {
     display: flex;
-    flex: 1 1 12rem;
     flex-direction: column;
     gap: 0.15rem;
     min-width: 0;
@@ -372,15 +399,45 @@
     color: var(--text-secondary);
   }
 
-  /* Reference transcript: the source the copy is compared against. */
   .overlay-source {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding: var(--space-4) var(--space-5);
+    padding-inline: var(--space-5);
     border-top: 1px solid var(--border);
   }
-
+  .overlay-source > p {
+    margin: 0 0 var(--space-4);
+    overflow-wrap: anywhere;
+  }
+  .save-status {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-5);
+    border-top: 1px solid var(--border);
+  }
+  .save-status p {
+    margin: 0;
+  }
+  .save-failure {
+    flex-direction: column;
+    align-items: flex-start;
+    border-top: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--result-bad-bg);
+    padding-inline: min(var(--space-5), 6%);
+  }
+  .save-failure p {
+    color: var(--text-primary);
+  }
+  .save-failure :global(svg) {
+    color: var(--status-bad);
+    margin-inline-end: var(--space-2);
+  }
+  .save-failure button {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .overlay-diff-section {
     padding: var(--space-4) var(--space-5);
     display: flex;
@@ -388,13 +445,58 @@
     gap: var(--space-3);
   }
 
-  .overlay-diff-header :global(.card-title) {
+  .diff-count {
     margin: 0;
+    font-size: var(--text-base);
+    font-weight: 600;
   }
 
-  .overlay-diff-tokens {
-    max-height: 34vh;
-    overflow-y: auto;
+  .corrections {
+    border-collapse: collapse;
+    table-layout: fixed;
+    width: 100%;
+  }
+  .corrections th,
+  .corrections td {
+    width: 50%;
+    text-align: start;
+    vertical-align: top;
+    padding-block: var(--space-2);
+    border-bottom: 1px solid var(--border);
+  }
+  .corrections th {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+  .corrections td {
+    font-family: var(--font-mono);
+    overflow-wrap: anywhere;
+  }
+  .corrections td:first-child:not([colspan]) {
+    padding-inline-end: var(--space-3);
+  }
+  .corrections summary {
+    font-family: var(--font-ui);
+  }
+  .changed {
+    color: var(--text-primary);
+    background: var(--status-ok-tint);
+    text-decoration: underline;
+    font-weight: 700;
+  }
+  .word-space {
+    font: var(--text-xs) var(--font-ui);
+    padding-inline: var(--space-1);
+  }
+  .omitted-groups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding-block: var(--space-2);
+  }
+  .omitted-groups > span {
+    max-width: 100%;
   }
 
   .overlay-actions {
@@ -405,17 +507,7 @@
     border-top: 1px solid var(--border);
   }
 
-  .diff-token {
-    display: inline-flex;
-    flex-wrap: wrap;
-    max-width: 100%;
-    white-space: normal;
-    align-items: center;
-    gap: var(--space-1);
-  }
-
-  .overlay-actions button,
-  .overlay-close {
+  .overlay-actions button {
     min-width: var(--answer-target-min);
     min-height: var(--answer-target-min);
   }
@@ -425,8 +517,24 @@
   }
 
   .overlay-close {
-    flex-shrink: 0;
-    margin-left: auto;
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
+  }
+
+  @container (max-width: 20rem) {
+    .overlay-score-body {
+      display: contents;
+    }
+    .overlay-score-body .overlay-rule {
+      grid-column: 1 / -1;
+    }
+    .overlay-head,
+    .overlay-score,
+    .overlay-diff-section {
+      padding-inline: var(--space-3);
+    }
   }
 
   @media (max-width: 640px) {

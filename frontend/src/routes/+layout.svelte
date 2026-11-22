@@ -64,6 +64,7 @@
   const isHome = $derived(page.route.id === '/' && page.status < 400);
   let mobileSection = $derived(navigationDestination(page.route.id, true));
   let desktopSection = $derived(navigationDestination(page.route.id));
+  let bottomNavHeight = $state(0);
   let isTrainingSession = $derived(page.route.id === '/morse/learn/session' && page.status < 400);
   const MIGRATION_BANNER_HIDDEN_ROUTES = new Set([
     '/morse/practice',
@@ -336,6 +337,7 @@
 
   <main
     class="page-content"
+    style:--bottom-nav-height={`${bottomNavHeight}px`}
     class:page-content--session={isTrainingSession}
     class:page-content--home={isHome}
     id="main-content"
@@ -343,9 +345,10 @@
   >
     {#key lang.value}
       {#if showMigrationBanner}
-        <MigrationBanner />
+        <MigrationBanner>{@render children()}</MigrationBanner>
+      {:else}
+        {@render children()}
       {/if}
-      {@render children()}
     {/key}
   </main>
 
@@ -353,7 +356,7 @@
     <SiteFooter variant={isHome ? 'full' : 'minimal'} primaryLinks={PRIMARY_NAV} />
 
     <!-- The compact shell uses bottom tabs for internal views, including the Home dashboard. -->
-    <nav class="bottom-nav" aria-label={m.nav_primary()}>
+    <nav class="bottom-nav" aria-label={m.nav_primary()} bind:offsetHeight={bottomNavHeight}>
       {#each TAB_NAV as item (item.path)}
         <a
           href={href(item.path)}

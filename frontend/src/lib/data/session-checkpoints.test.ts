@@ -136,8 +136,11 @@ describe('session checkpoint persistence', () => {
     const checkpoint = copyCheckpoint();
     await saveCheckpoint(owner, checkpoint);
 
+    const replacement = copyCheckpoint('MK', '2026-11-01T00:00:02.000Z');
+    await saveCheckpoint(owner, replacement);
     await discardCheckpoint(owner, checkpoint);
-
+    expect(await loadCheckpoint(owner, 'copy')).toEqual(replacement);
+    await discardCheckpoint(owner, replacement);
     expect(await loadCheckpoint(owner, 'copy')).toBeNull();
   });
 
@@ -180,6 +183,25 @@ describe('checkpoint validation', () => {
     ['missing settings', { attempt: { ...copyAttempt(), settings: undefined } }],
     ['incomplete settings', { attempt: { ...copyAttempt(), settings: { charWpm: 20 } } }],
     ['missing session', { attempt: { ...copyAttempt(), session: undefined } }],
+    ['missing practice result', { attempt: { ...copyAttempt(), review: {} } }],
+    [
+      'invalid saved score',
+      {
+        attempt: {
+          ...copyAttempt(),
+          review: { result: { accuracy: 2, completedAt: '2026-11-01T00:00:00.000Z' } }
+        }
+      }
+    ],
+    [
+      'missing review in a checked session',
+      {
+        attempt: {
+          ...copyAttempt(),
+          session: { status: 'reviewed', attempt: 1, recordedAttempt: 1 }
+        }
+      }
+    ],
     [
       'invalid session status',
       {

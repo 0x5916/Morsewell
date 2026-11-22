@@ -1,14 +1,11 @@
 <script lang="ts">
-  import {
-    ArrowRight,
-    BookOpen,
-    CircleCheck,
-    ShieldCheck,
-    UserRound,
-    Wrench
-  } from '@lucide/svelte';
+  import { ArrowRight, BookOpen, ShieldCheck, UserRound, Wrench } from '@lucide/svelte';
   import { localizedHref as href } from '#lib/i18n.svelte.ts';
+  import { getLocale } from '#lib/paraglide/runtime.js';
   import { GITHUB_URL } from '#lib/seo.ts';
+  import { LESSONS } from '#lib/training/sequence.ts';
+  import { DEFAULT_LESSON_PLAN_CONFIG as sound } from '#lib/training/v2/lesson-builder.ts';
+  import { DEFAULT_MASTERY_POLICY as policy } from '#lib/training/v2/types.ts';
   import * as m from '#lib/paraglide/messages.js';
 
   // The lists store the message functions, not their values, so the template
@@ -18,13 +15,6 @@
     { id: 'the-project', label: m.about_project_title },
     { id: 'about-the-author', label: m.about_author_title },
     { id: 'your-data', label: m.about_privacy_title }
-  ];
-
-  const kochSteps = [
-    { title: m.about_koch_step1_title, body: m.about_koch_step1_body },
-    { title: m.about_koch_step2_title, body: m.about_koch_step2_body },
-    { title: m.about_koch_step3_title, body: m.about_koch_step3_body },
-    { title: m.about_koch_step4_title, body: m.about_koch_step4_body }
   ];
 </script>
 
@@ -51,39 +41,23 @@
     <h2 class="section-title">{m.about_koch_title()}</h2>
     <p class="body-text body-text--prose about-intro">{m.about_koch_intro()}</p>
 
-    <!-- How it works -->
-    <h3 class="sub-title">{m.about_koch_how_title()}</h3>
-    <ol class="step-list">
-      {#each kochSteps as item, index (item.title)}
-        <li class="step">
-          <span class="step-number">{index + 1}</span>
-          <div>
-            <strong class="step-title">{item.title()}</strong>
-            <p class="body-text">{item.body()}</p>
-          </div>
-        </li>
-      {/each}
-    </ol>
-
-    <!-- Why it works -->
-    <h3 class="sub-title">{m.about_koch_why_title()}</h3>
-    <p class="body-text body-text--prose">{m.about_koch_why_body()}</p>
-
-    <!-- Comparison -->
-    <h3 class="sub-title">{m.about_koch_vs_title()}</h3>
-    <div class="compare">
-      <div class="compare-col compare-col--bad">
-        <p class="panel-label compare-head">{m.about_koch_vs_traditional_label()}</p>
-        <p class="body-text">{m.about_koch_vs_traditional_body()}</p>
-      </div>
-      <div class="compare-col compare-col--good">
-        <p class="panel-label compare-head">
-          <CircleCheck size={15} aria-hidden="true" />
-          <span>{m.about_koch_vs_koch_label()}</span>
-        </p>
-        <p class="body-text">{m.about_koch_vs_koch_body()}</p>
-      </div>
-    </div>
+    <details class="ui-disclosure lesson-targets">
+      <summary>{m.about_koch_step2_title()}</summary>
+      <p>
+        {m.about_koch_step2_body({
+          attempts: policy.minAttemptsForStability,
+          sessions: policy.minSessionsForStability,
+          window: policy.rollingWindowSize,
+          accuracy: policy.targetAccuracy * 100,
+          seconds: (policy.maxAutomaticLatencyMs / 1000).toLocaleString(getLocale())
+        })}
+      </p>
+      <p>{m.about_koch_step1_body({ speed: sound.charWpm, spacing: sound.effWpm })}</p>
+      <p>{m.about_koch_step4_body({ count: LESSONS.join('').length, lessons: LESSONS.length })}</p>
+    </details>
+    <a href={href('/morse/learn/session?step=1')} class="btn-cta about-start"
+      >{m.home_cta()}<ArrowRight size={18} aria-hidden="true" /></a
+    >
   </section>
 
   <!-- The project -->
@@ -124,12 +98,6 @@
     </p>
     <a class="link standalone-target" href={href('/privacy')}>{m.privacy_title()}</a>
   </section>
-
-  <div class="about-cta">
-    <a href={href('/morse/learn/session?step=1')} class="btn-cta"
-      >{m.home_cta()}<ArrowRight size={18} aria-hidden="true" /></a
-    >
-  </div>
 </div>
 
 <style>
@@ -199,57 +167,15 @@
     align-self: flex-start;
   }
 
-  /* Two-peer comparison: one container, one shared edge, tinted columns. */
-  .compare {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    margin-top: var(--space-3);
-    border: 1px solid var(--border-card);
-    border-radius: var(--radius-md);
-    overflow: hidden;
+  .lesson-targets {
+    margin-block: var(--space-3);
   }
-
-  .compare-col {
-    padding: var(--space-4);
+  .about-start {
+    align-self: flex-start;
   }
-
-  .compare-col + .compare-col {
-    border-left: 1px solid var(--border-card);
-  }
-
-  .compare-col--bad {
-    background-color: var(--result-bad-bg);
-  }
-
-  .compare-col--good {
-    background-color: var(--result-good-bg);
-  }
-
-  .compare-head {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin: 0 0 var(--space-2);
-  }
-
-  .about-cta {
-    margin-top: var(--section-gap);
-    display: flex;
-    justify-content: center;
-  }
-
   @media (max-width: 480px) {
     .about-toc-list {
       grid-template-columns: 1fr;
-    }
-
-    .compare {
-      grid-template-columns: 1fr;
-    }
-
-    .compare-col + .compare-col {
-      border-left: none;
-      border-top: 1px solid var(--border-card);
     }
   }
 

@@ -57,6 +57,33 @@ function fakePorts(overrides: Partial<CopyCheckpointPorts> = {}) {
 }
 
 describe('copy checkpoint store', () => {
+  it('can save the current draft again if navigation failed after a confirmed discard', async () => {
+    const fake = fakePorts();
+    const store = createCopyCheckpointStore(fake.ports);
+    await store.load();
+    store.checkpoint(activeAttempt(), 'MK');
+    await store.clear();
+    expect(fake.checkpoint).toBeNull();
+    expect(await store.flushForDeparture()).toBe(true);
+    expect(fake.checkpoint?.draft).toBe('MK');
+    await store.dispose();
+  });
+  it('keeps a failed departure in the editor and retries the latest draft', async () => {
+    const fake = fakePorts();
+    const store = createCopyCheckpointStore(fake.ports);
+    await store.load();
+    const save = vi.mocked(fake.ports.save);
+    const persist = save.getMockImplementation()!;
+    save.mockRejectedValue(new Error('quota'));
+    store.checkpoint(activeAttempt(), 'KM\nMK');
+    expect(await store.flushForDeparture()).toBe(false);
+    expect(store.saveError).toBe(true);
+    expect(fake.checkpoint).toBeNull();
+    save.mockImplementation(persist);
+    expect(await store.flushForDeparture()).toBe(true);
+    expect(fake.checkpoint?.draft).toBe('KM\nMK');
+    await store.dispose();
+  });
   it('claims the session lease when no checkpoint exists', async () => {
     const fake = fakePorts();
     const store = createCopyCheckpointStore(fake.ports);
@@ -226,6 +253,22 @@ describe('copy checkpoint store', () => {
     await store.clearForAttempt('attempt-1');
     expect(fake.checkpoint).toBeNull();
     await store.dispose();
+  });
+
+  it('does not offer a saved passage again when its checked audio is replayed', async () => {
+    const fake = fakePorts();
+    const store = createCopyCheckpointStore(fake.ports);
+    const attempt = activeAttempt();
+    await store.load();
+    store.checkpoint(attempt, 'KM');
+    await store.clearForAttempt(attempt.id!);
+    store.checkpoint(attempt, 'KM');
+    await store.whenIdle();
+    expect(store.hasWork).toBe(false);
+    expect(fake.checkpoint).toBeNull();
+    store.checkpoint({ ...attempt, id: 'new-passage' }, 'K');
+    await store.whenIdle();
+    expect(fake.checkpoint?.draft).toBe('K');
   });
 
   it('clears the checkpoint and retry target on departure', async () => {
@@ -421,24 +464,33 @@ describe('copy checkpoint store', () => {
     await store.dispose();
   });
 
-  it('waits for queued writes before releasing the lease on dispose', async () => {
-    let finishWrite = () => {};
-    const fake = fakePorts({
-      save: vi.fn(
-        () =>
-          new Promise<void>((resolve) => {
-            finishWrite = resolve;
-          })
-      )
-    });
-    const store = createCopyCheckpointStore(fake.ports);
-    await store.load();
-    store.checkpoint(activeAttempt(), 'K');
-    const disposing = store.dispose();
-    expect(fake.released).not.toHaveBeenCalled();
-    await Promise.resolve();
-    finishWrite();
-    await disposing;
-    expect(fake.released).toHaveBeenCalled();
-  });
+  it.each(['dispose', 'owner change'])(
+    'finishes queued writes before releasing the lease on %s',
+    async (reason) => {
+      let finishWrite = () => {};
+      const fake = fakePorts({
+        save: vi.fn(
+          () =>
+            new Promise<void>((resolve) => {
+              finishWrite = resolve;
+            })
+        )
+      });
+      const store = createCopyCheckpointStore(fake.ports);
+      await store.load();
+      store.checkpoint(activeAttempt(), 'K');
+      if (reason === 'owner change') fake.setOwner('account');
+      const leaving = reason === 'dispose' ? store.dispose() : store.load();
+      expect(fake.released).not.toHaveBeenCalled();
+      await Promise.resolve();
+      finishWrite();
+      await leaving;
+      expect(fake.ports.save).toHaveBeenCalledWith(
+        'guest',
+        expect.objectContaining({ draft: 'K' })
+      );
+      expect(fake.released).toHaveBeenCalled();
+      if (reason === 'owner change') await store.dispose();
+    }
+  );
 });

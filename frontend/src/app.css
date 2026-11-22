@@ -1020,55 +1020,6 @@ select.select {
   }
 }
 
-.diff-legend {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.diff-tokens {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  font-family: var(--font-mono);
-  font-size: var(--text-base);
-  line-height: 1.8;
-}
-
-.diff-token {
-  display: inline-block;
-  padding: 0.08rem 0.35rem;
-  border-radius: var(--radius-xs);
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.diff-correct {
-  background: var(--status-good-tint);
-  color: var(--status-good);
-}
-
-.diff-sub {
-  background: var(--status-ok-tint);
-  color: var(--status-ok);
-}
-
-.diff-missing {
-  background: var(--status-bad-tint);
-  color: var(--status-bad);
-  text-decoration: line-through;
-}
-
-.diff-extra {
-  background: var(--status-extra-tint);
-  color: var(--status-extra);
-}
-
-.diff-expected {
-  font-size: var(--text-xs);
-  font-weight: 400;
-}
-
 button:focus-visible,
 a:focus-visible,
 summary:focus-visible,
@@ -1410,8 +1361,9 @@ summary:focus-visible,
 
 /* One shell aligns the heading, announcement and content at each training width. */
 .page-content:has(> .training-page) {
-  max-width: calc(var(--training-width, 70rem) + 2 * var(--space-6));
-  padding-inline: var(--space-6);
+  --training-gutter: min(var(--space-6), 24px);
+  max-width: calc(var(--training-width, 70rem) + 2 * var(--training-gutter));
+  padding-inline: var(--training-gutter);
 }
 .page-content:has(> .practice-page) {
   --training-width: 40.625rem;

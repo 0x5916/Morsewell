@@ -1,47 +1,52 @@
 <script lang="ts">
-  import { CircleAlert } from '@lucide/svelte';
-  import type { CharacterMastery } from '../../training/v2/types';
+  import { DEFAULT_MASTERY_POLICY as policy, type CharacterMastery } from '../../training/v2/types';
   import { masteryRequirements } from './lesson-requirements';
+  import { getLocale } from '#lib/paraglide/runtime.js';
   import * as m from '#lib/paraglide/messages.js';
 
   let {
     unlockTitle,
-    checks
+    remainingMasteries
   }: {
     unlockTitle: string;
-    checks: { character: string; mastery: CharacterMastery }[];
+    remainingMasteries: CharacterMastery[];
   } = $props();
 </script>
 
 <details class="unlock-checks">
   <summary class="training-disclosure">{unlockTitle}</summary>
-  <p class="unlock-hint">{m.learn_unlock_checks_hint()}</p>
   <ul class="mastery-checks" role="list">
-    {#each checks as { character, mastery } (character)}
+    {#each remainingMasteries as mastery (mastery.character)}
       <li class="mastery-character">
-        <strong class="check-character">{character}</strong>
+        <strong class="check-character">{mastery.character}</strong>
         <div class="character-checks">
           {#each masteryRequirements(mastery) as requirement (requirement.id)}
-            {#if requirement.id === 'review'}
-              <p class="review-check">
-                <CircleAlert size={16} aria-hidden="true" />{requirement.label}
-              </p>
-            {:else}
-              <div class="mastery-check">
-                <div class="check-values">
-                  <span>{requirement.label}</span><strong>{requirement.value}</strong>
-                </div>
-                {#if requirement.current !== undefined && requirement.target !== undefined}
-                  <progress aria-hidden="true" value={requirement.current} max={requirement.target}
-                  ></progress>
-                {/if}
+            <div class="mastery-check">
+              <div class="check-values">
+                <span>{requirement.label}</span><strong>{requirement.value}</strong>
               </div>
-            {/if}
+              {#if requirement.current !== undefined && requirement.target !== undefined}
+                <progress aria-hidden="true" value={requirement.current} max={requirement.target}
+                ></progress>
+              {/if}
+            </div>
           {/each}
         </div>
       </li>
     {/each}
   </ul>
+  <details class="calculation ui-disclosure">
+    <summary>{m.learn_unlock_calculation()}</summary>
+    <p class="unlock-hint">
+      {m.learn_unlock_checks_hint({
+        count: policy.minAttemptsForStability,
+        sessions: policy.minSessionsForStability,
+        window: policy.rollingWindowSize,
+        percent: Math.round(policy.targetAccuracy * 100),
+        seconds: (policy.maxAutomaticLatencyMs / 1000).toLocaleString(getLocale())
+      })}
+    </p>
+  </details>
 </details>
 
 <style>
@@ -51,6 +56,10 @@
     color: var(--text-secondary);
     font-size: var(--text-sm);
     font-weight: 500;
+  }
+
+  .calculation {
+    margin-top: var(--space-3);
   }
 
   .unlock-hint {
@@ -119,17 +128,5 @@
 
   .mastery-check progress::-moz-progress-bar {
     background: var(--accent);
-  }
-
-  .review-check {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--space-2);
-    margin: 0;
-  }
-
-  .review-check :global(svg) {
-    flex-shrink: 0;
-    margin-top: var(--space-1);
   }
 </style>

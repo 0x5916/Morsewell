@@ -1,6 +1,11 @@
 import { loadLearningSnapshot, type LearningSnapshot } from './data/learning-snapshot';
 import { learningEvidenceCoverage, subscribeLearningSync } from './learning-sync.svelte';
 import { getTrainingOwner, subscribeTrainingSync } from './training-sync.svelte';
+/** Use the same owner coverage when recommending a session and validating it on entry. */
+export function loadOwnerLearningSnapshot(ownerKey: string) {
+  return loadLearningSnapshot({ ownerKey, coverage: learningEvidenceCoverage(ownerKey) });
+}
+
 /** Mounted pages share the same projection and owner fence. No browser work during prerender. */
 export function createLearningView() {
   let snapshot = $state.raw<LearningSnapshot | null>(null);
@@ -12,10 +17,7 @@ export function createLearningView() {
       request = ++generation;
     if (snapshot?.ownerKey !== ownerKey) snapshot = null;
     try {
-      const result = await loadLearningSnapshot({
-        ownerKey,
-        coverage: learningEvidenceCoverage(ownerKey)
-      });
+      const result = await loadOwnerLearningSnapshot(ownerKey);
       if (active && request === generation && getTrainingOwner() === ownerKey) {
         snapshot = result;
         failed = false;

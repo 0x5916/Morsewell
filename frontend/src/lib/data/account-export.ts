@@ -61,7 +61,7 @@ const attemptFields =
 const sessionFields =
   'session_id schema_version mode source_kind source_record_id curriculum_version lesson status char_wpm eff_wpm freq_hz started_at ended_at occurred_at occurred_at_source prompt_count attempt_count event_ids scored_attempt_count correct_attempt_count accuracy scoring_version received_at';
 const localSessionFields =
-  'schemaVersion id mode accuracy step charWpm effWpm freqHz startedAt completedAt occurredAt occurredAtSource sourceKind sourceRecordId status promptCount completedPromptCount eventIds';
+  'schemaVersion id mode practiceContext accuracy step charWpm effWpm freqHz startedAt completedAt occurredAt occurredAtSource sourceKind sourceRecordId status promptCount completedPromptCount eventIds';
 
 /** Read complete, fixed-ceiling cloud feeds without advancing this device's sync checkpoints. */
 async function readChanges(
@@ -208,7 +208,9 @@ export async function downloadAccountData(cancel: AbortSignal): Promise<void> {
           .filter((a) => !attempts.has(a.id) || conflicts.has(`attempt:${a.id}`))
           .map(attemptToWire),
         sessions: localSessions
-          .filter((s) => !sessions.has(s.id) || conflicts.has(`session:${s.id}`))
+          .filter(
+            (s) => s.practiceContext || !sessions.has(s.id) || conflicts.has(`session:${s.id}`)
+          )
           .map((s) => select(s, localSessionFields)),
         evidence: records.filter((r) => {
           const copy = evidence.get(r.id);

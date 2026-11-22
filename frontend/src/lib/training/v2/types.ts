@@ -11,6 +11,8 @@
  * - Schema version is explicitly pinned to 1.
  */
 
+import { isPracticeContext, type PracticeContext } from '../contextual-practice';
+
 export const V2_SCHEMA_VERSION = 1 as const;
 
 export type MasteryStatus = 'new' | 'learning' | 'review' | 'stable';
@@ -100,6 +102,8 @@ export interface TrainingSessionRecord {
   id: string;
   /** Records saved before mode was introduced are guided lessons. */
   mode?: 'guided' | 'practice';
+  /** Device-local content choice. The account sync format has no content field. */
+  practiceContext?: PracticeContext;
   accuracy?: number;
   step: number;
   charWpm: number;
@@ -119,6 +123,7 @@ export interface HistorySessionRecord {
   schemaVersion: typeof V2_SCHEMA_VERSION;
   id: string;
   mode?: 'guided' | 'practice' | 'legacy';
+  practiceContext?: PracticeContext;
   accuracy?: number | null;
   step: number;
   charWpm?: number | null;
@@ -136,6 +141,9 @@ export interface HistorySessionRecord {
   eventIds?: string[];
 }
 
+export type SessionCoaching =
+  { kind: 'more-answers' } | { kind: 'accuracy' } | { kind: 'characters'; characters: string[] };
+
 export interface SessionSummary {
   sessionId: string;
   step: number;
@@ -149,6 +157,8 @@ export interface SessionSummary {
   weakCharacters: string[];
   unlockedNextStep: boolean;
   progressionReasonCode: string;
+  remainingMasteries?: CharacterMastery[];
+  coaching?: SessionCoaching | null;
   completedAt: string;
 }
 
@@ -218,6 +228,8 @@ export function isValidTrainingSessionRecord(val: unknown): val is TrainingSessi
     s.schemaVersion === V2_SCHEMA_VERSION &&
     typeof s.id === 'string' &&
     (s.mode === undefined || s.mode === 'guided' || s.mode === 'practice') &&
+    (s.practiceContext === undefined ||
+      (s.mode === 'practice' && isPracticeContext(s.practiceContext))) &&
     (s.accuracy === undefined ||
       (typeof s.accuracy === 'number' && s.accuracy >= 0 && s.accuracy <= 1)) &&
     typeof s.step === 'number' &&

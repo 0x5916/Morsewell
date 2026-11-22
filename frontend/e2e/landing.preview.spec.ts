@@ -25,11 +25,7 @@ for (const theme of ['light', 'dark'] as const)
       const preview = page.getByRole('region', { name: 'How the lessons build' });
       const rows = preview.getByRole('list').getByRole('listitem');
       await expect(rows.locator('strong')).toHaveText(['Lesson 1', 'Lesson 2', 'Lesson 3']);
-      await expect(rows.locator('span')).toHaveText([
-        'Hear the difference between K and M.',
-        'Add R to the mix. Listen for K, M, or R.',
-        'Add S and practice all four letters by ear.'
-      ]);
+      await expect(rows.locator('span')).toHaveText(['Start with K and M.', 'Add R.', 'Add S.']);
       const footer = page.locator('.site-footer--full');
       await expect(footer).toBeVisible();
       await expect(

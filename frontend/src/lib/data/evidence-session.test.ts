@@ -99,6 +99,7 @@ async function fixture() {
     db,
     repo,
     controller,
+    hasInterruptedFirstListen: ports.hasInterruptedFirstListen,
     audio,
     finish,
     advance: () => {
@@ -146,11 +147,13 @@ describe('prospective session capture through controller ports', () => {
     f.controller.play();
     // Interrupt before asynchronous guard preparation settles.
     f.controller.pause();
+    expect(f.hasInterruptedFirstListen()).toBe(true);
     f.controller.resume();
     await f.audio.flush();
     f.controller.play();
     await f.audio.flush();
     await f.finish();
+    expect(f.hasInterruptedFirstListen()).toBe(true);
     const append = vi
       .spyOn(f.repo, 'append')
       .mockRejectedValueOnce(new Error('Synthetic disk failure'));

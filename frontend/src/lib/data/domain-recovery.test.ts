@@ -112,6 +112,54 @@ describe('same-browser domain recovery', () => {
     ).rejects.toThrow('invalid');
     expect(storage.getItem('refresh_token')).toBeNull();
   });
+
+  it('restores an absent passage type and rejects a conflicting type for the same result', async () => {
+    const factory = new IDBFactory();
+    const db = await openTrainingDb(factory);
+    const value = {
+      ownerKey: 'unclaimed',
+      id: 'passage',
+      schemaVersion: 1,
+      mode: 'practice',
+      status: 'completed',
+      step: 1,
+      accuracy: 0.9,
+      charWpm: 20,
+      effWpm: 12,
+      freqHz: 600,
+      promptCount: 1,
+      completedPromptCount: 1,
+      startedAt: '2026-10-20T00:00:00Z',
+      completedAt: '2026-10-20T00:01:00Z'
+    };
+    const sessions = () =>
+      db.transaction('owned_sessions', 'readwrite').objectStore('owned_sessions');
+    await reqToPromise(sessions().put(value));
+    const restore = (practiceContext: string) =>
+      restoreDeviceHistory(
+        {
+          snapshots: [
+            {
+              name: TRAINING_DB_NAME,
+              version: 2,
+              stores: {
+                owned_sessions: [{ ...value, practiceContext }],
+                meta: []
+              }
+            }
+          ],
+          preferences: []
+        },
+        preferences(),
+        factory
+      );
+    expect(await restore('words')).toBe(1);
+    expect(await reqToPromise(sessions().get(['unclaimed', 'passage']))).toMatchObject({
+      practiceContext: 'words'
+    });
+    await expect(restore('callsigns')).rejects.toThrow('conflict');
+    db.close();
+  });
 });
 
 it('copies later offline additions without replaying a previously consumed upload', async () => {

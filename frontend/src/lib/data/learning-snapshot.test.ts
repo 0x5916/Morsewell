@@ -116,6 +116,22 @@ const project = (records: EvidenceRecord[], now = base + 10 * day) =>
     knownCharacters: ['K', 'M']
   });
 describe('unified learning projection', () => {
+  it('keeps an empty first-listen history distinct from coaching, interrupted or rejected checks', () => {
+    const coach = record('coach', 'plan', { purpose: 'coaching' });
+    expect(project([coach]).hasMixedCheckHistory).toBe(false);
+    const check = record('check', 'plan', { purpose: 'mixed-check' });
+    expect(
+      projectLearningSnapshot([check], { ownerKey, excludedRecordIds: ['check'] })
+        .hasMixedCheckHistory
+    ).toBe(true);
+    expect(
+      project([record('listen', 'exposure-open', { source: 'mixed-check' })]).hasMixedCheckHistory
+    ).toBe(true);
+    expect(project([record('earlier', 'milestone', { character: 'M' })]).hasMixedCheckHistory).toBe(
+      true
+    );
+  });
+
   it('preserves legacy and guided character records without promoting free-practice exposure', () => {
     const exposure = (character: string, source: string) =>
       record(`open-${character}`, 'exposure-open', {
@@ -241,6 +257,17 @@ describe('unified learning projection', () => {
         nowIso: iso(base + day)
       }).recommendation.primary.reason
     ).toBe('load-history');
+  });
+  it('accepts a provisional return recommendation under the same complete account coverage', () => {
+    const records = [...check('one', base), ...check('two', base + day)];
+    const options = { ownerKey: 'account:learner', profile, nowIso: iso(base + 30 * day) };
+    const complete = projectLearningSnapshot(records, { ...options, coverage: 'complete' });
+    const partial = projectLearningSnapshot(records, { ...options, coverage: 'partial' });
+    const recommended = complete.recommendation.primary;
+    expect(recommended.reason).toBe('return-screening');
+    expect(complete.characters[0].proficiency?.status).toBe('provisional');
+    expect(returnScreeningTargets(complete, recommended.targets)).toEqual(['K', 'M']);
+    expect(returnScreeningTargets(partial, recommended.targets)).toBeNull();
   });
   it('preserves return-screening targets in the session link', () => {
     const records = [...check('one', base), ...check('two', base + day)];

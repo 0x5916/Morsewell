@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ChevronRight, Clock3 } from '@lucide/svelte';
   import { onDestroy, tick, untrack } from 'svelte';
   import type { PracticeContext } from '../../training/contextual-practice';
   import { getLessonChars, LESSONS } from '../../training/sequence';
@@ -8,13 +9,15 @@
     emptyCopyAttempt,
     copyPlaybackEvent,
     reviewCopyAttempt,
+    restoreCopyAttempt,
     copyInputLimit,
+    selectedGroupLesson,
     boundCopyInput,
     type CopyAttempt
   } from '../../practice/copy-attempt';
   import { normalizePlaybackSettings } from '../../practice/playback';
   import { practiceKeyIntent } from '../../practice/keyboard';
-  import { formatPercent } from '../../format';
+  import { formatClock, formatPercent } from '../../format';
   import MorsePlayer from '../MorsePlayer.svelte';
   import ResultOverlay from '../ResultOverlay.svelte';
   import ExitSessionDialog from '../learning/ExitSessionDialog.svelte';
@@ -54,17 +57,18 @@
 
   let settings = $state(normalizePlaybackSettings({}));
   let attempt = $state.raw(emptyCopyAttempt());
-  let activeLesson = $derived(attempt.exercise.lesson);
+  let activeLesson = $derived(selectedGroupLesson(attempt, lesson));
   let session = $derived(attempt.session);
   let lessonText = $derived(attempt.exercise.text);
 
   let context = $state<PracticeContext>('groups');
+  let editSetup = $state(false);
+  const setupId = $props.id();
   let inputText = $state('');
   let result = $derived(attempt.review?.result.accuracy ?? -1);
   let showOverlay = $state(false);
-  let diffTokens = $derived(attempt.review?.diffTokens ?? []);
+  let comparison = $derived(attempt.review?.comparison);
   let playbackPaused = $state(false);
-  let focusTimer: ReturnType<typeof setTimeout> | null = null;
   let answerEl = $state<HTMLTextAreaElement | null>(null);
   let discardOpen = $state(false);
   let discardReturnFocus = $state<HTMLElement | null>(null);
@@ -85,10 +89,10 @@
     untrack(() => {
       settings = next;
       if (resume) {
-        const restored = structuredClone(resume.attempt);
+        const restored = restoreCopyAttempt(resume.attempt, resume.draft);
         settings = restored.settings;
         context = restored.exercise.context ?? 'groups';
-        attempt = copyPlaybackEvent(restored, 'stop');
+        attempt = restored;
         inputText = resume.draft;
         showOverlay = Boolean(restored.review);
         onStart?.();
@@ -103,34 +107,38 @@
     untrack(() => onCheckpoint?.(current, draft));
   });
 
-  let currentLessonChars = $derived(
-    context === 'groups'
-      ? getLessonChars(activeLesson).split('').filter(Boolean)
-      : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890'.split('')
-  );
+  let currentLessonChars = $derived(getLessonChars(activeLesson).split(''));
 
   let transportLive = $derived(session.status === 'playing' || session.status === 'paused');
   let sessionStarted = $derived(session.status !== 'ready' && session.status !== 'disposed');
   let checkEnabled = $derived(canCheck(session) && inputText.trim() !== '');
   let unfinished = $derived(result < 0 && (inputText.trim() !== '' || session.status !== 'ready'));
 
-  let sessionStateText = $derived(
-    session.status === 'reviewed'
-      ? m.trainer_state_checked()
+  const setupLabel = $derived(
+    context === 'groups'
+      ? m.practice_history_groups({ step: activeLesson })
+      : context === 'words'
+        ? m.context_words()
+        : context === 'callsigns'
+          ? m.context_callsigns()
+          : m.context_contact()
+  );
+  const playbackStatus = $derived(
+    result >= 0
+      ? playbackPaused
+        ? m.practice_review_replay_paused()
+        : transportLive
+          ? m.practice_review_replaying()
+          : m.trainer_state_checked()
       : playbackPaused
         ? m.practice_paused()
         : transportLive
           ? m.trainer_state_listening()
-          : session.status === 'ready'
-            ? m.trainer_state_ready()
-            : inputText.trim() !== ''
-              ? m.trainer_state_ready_check()
-              : m.trainer_state_idle()
+          : m.trainer_state_idle()
   );
 
   function regenerate(nextLesson = activeLesson) {
     if (savePending) return;
-    if (focusTimer) clearTimeout(focusTimer);
     void player?.stopNow();
     attempt = {
       ...createCopyAttempt(nextLesson, settings, attempt, undefined, context),
@@ -170,13 +178,19 @@
     if (!destroyed) player?.focusPlay();
   }
 
+  async function applySelection(select: HTMLSelectElement, nextLesson = activeLesson) {
+    regenerate(nextLesson);
+    await tick();
+    if (!destroyed && !select.isConnected) player?.focusPlay();
+  }
+
   async function selectContext(event: Event) {
     const select = event.currentTarget as HTMLSelectElement;
     const next = select.value as PracticeContext;
     select.value = context;
     if (next !== context && (await confirmReplaceExercise())) {
       context = next;
-      regenerate();
+      await applySelection(select);
     }
   }
 
@@ -184,7 +198,8 @@
     const select = event.currentTarget as HTMLSelectElement;
     const nextLesson = Number(select.value);
     select.value = String(activeLesson);
-    if (nextLesson !== activeLesson && (await confirmReplaceExercise())) regenerate(nextLesson);
+    if (nextLesson !== activeLesson && (await confirmReplaceExercise()))
+      await applySelection(select, nextLesson);
   }
 
   export function focusCopy() {
@@ -204,14 +219,15 @@
     onFinish?.();
   }
 
-  function handleStart() {
+  async function handleStart() {
     onStart?.();
+    editSetup = false;
     attempt = copyPlaybackEvent(attempt, 'start');
-    if (focusTimer) clearTimeout(focusTimer);
-    focusTimer = setTimeout(() => {
-      focusTimer = null;
-      if (!showOverlay && !discardOpen && sessionStarted) answerEl?.focus();
-    }, 100);
+    // Focus as soon as the field exists, before the learner can choose another control.
+    await tick();
+    if (!destroyed && !showOverlay && !discardOpen && sessionStarted && !attempt.review) {
+      answerEl?.focus({ preventScroll: true });
+    }
   }
 
   function handleEnded() {
@@ -244,7 +260,6 @@
   onDestroy(() => {
     destroyed = true;
     finishDiscardDecision(false);
-    if (focusTimer) clearTimeout(focusTimer);
   });
 </script>
 
@@ -256,45 +271,160 @@
   role="region"
   aria-label={m.practice_copy_region()}
 >
-  <div class="console-head">
-    <label class="field"
-      ><span class="label-text">{m.context_label()}</span><select
-        class="select"
-        value={context}
-        onchange={selectContext}
-        disabled={savePending}
-      >
-        <option value="groups">{m.context_groups()}</option><option value="words"
-          >{m.context_words()}</option
-        ><option value="callsigns">{m.context_callsigns()}</option><option value="contact"
-          >{m.context_contact()}</option
+  {#snippet selectors()}
+    <div class="console-head">
+      <label class="field"
+        ><span class="label-text">{m.context_label()}</span><select
+          class="select"
+          value={context}
+          onchange={selectContext}
+          disabled={savePending}
         >
-      </select></label
-    >
-    {#if context === 'groups'}
-      <label class="field">
-        <span class="label-text">{m.trainer_current_lesson()}</span>
-        <select class="select" value={activeLesson} onchange={selectLesson} disabled={savePending}>
-          {#each LESSONS as characters, index (index)}
-            <option value={index + 1}
-              >{m.home_lesson_title({
-                step: index + 1,
-                characters: characters.split('').join(', ')
-              })}</option
-            >
-          {/each}
-        </select>
-      </label>
-    {/if}
-    <details class="character-details">
-      <summary class="training-disclosure"
-        >{m.practice_character_count({ count: currentLessonChars.length })}</summary
+          <option value="groups">{m.context_groups()}</option><option value="words"
+            >{m.context_words()}</option
+          ><option value="callsigns">{m.context_callsigns()}</option><option value="contact"
+            >{m.context_contact()}</option
+          >
+        </select></label
       >
-      <p>{currentLessonChars.join(' ')}</p>
-    </details>
+      {#if context === 'groups'}
+        <label class="field">
+          <span class="label-text">{m.trainer_current_lesson()}</span>
+          <select
+            class="select"
+            value={activeLesson}
+            onchange={selectLesson}
+            disabled={savePending}
+          >
+            {#each LESSONS as characters, index (index)}
+              <option value={index + 1}
+                >{m.practice_lesson_adds({
+                  step: index + 1,
+                  characters: characters.split('').join(', ')
+                })}</option
+              >
+            {/each}
+          </select>
+        </label>
+        <details class="character-details">
+          <summary class="training-disclosure"
+            >{m.practice_character_count({ count: currentLessonChars.length })}</summary
+          >
+          <p>{currentLessonChars.join(' ')}</p>
+        </details>
+      {:else}
+        <p class="character-details">
+          {context === 'words'
+            ? m.practice_word_count()
+            : context === 'callsigns'
+              ? m.practice_callsign_count()
+              : m.practice_contact_description()}
+        </p>
+      {/if}
+    </div>
+  {/snippet}
+  <div class="passage-setup">
+    {#if sessionStarted}
+      <details class="setup-details">
+        <summary class="training-disclosure">{setupLabel}</summary>
+        {@render selectors()}
+      </details>
+    {:else}
+      <div class="compact-setup">
+        <p>{setupLabel}</p>
+        {#if context === 'groups'}
+          <p class="compact-characters">
+            {currentLessonChars.length <= 6
+              ? currentLessonChars.join(' ')
+              : m.practice_character_count({ count: currentLessonChars.length })}
+          </p>
+        {/if}
+        <button
+          type="button"
+          class="setup-toggle"
+          aria-expanded={editSetup}
+          aria-controls={setupId}
+          onclick={() => (editSetup = !editSetup)}
+          ><ChevronRight size={16} aria-hidden="true" />{m.practice_change_setup()}</button
+        >
+      </div>
+      <div class="ready-selectors" class:editing={editSetup} id={setupId}>
+        {@render selectors()}
+      </div>
+    {/if}
   </div>
 
-  {#if sessionStarted}<p class="session-state" aria-live="polite">{sessionStateText}</p>{/if}
+  {#if sessionStarted}
+    <p class="session-state" role="status">{playbackStatus}</p>
+  {:else if lessonText}
+    <p class="session-state ready-cue">
+      <span class="audio-length"
+        ><Clock3 size={16} aria-hidden="true" /><span class="sr-only"
+          >{m.practice_audio_length()}
+        </span>{formatClock(attempt.duration)}</span
+      >
+      <span class="copy-cue"
+        >{context === 'groups' ? m.practice_groups_cue() : m.practice_passage_cue()}</span
+      >
+    </p>
+  {/if}
+  {#snippet answerControls()}
+    <div class="answer-section" class:hidden={!sessionStarted}>
+      {#if sessionStarted}
+        <label class="field">
+          <span class="label-text">{m.trainer_answer_label()}</span>
+          <textarea
+            bind:this={answerEl}
+            bind:value={() => inputText, (value) => (inputText = boundCopyInput(lessonText, value))}
+            class="textarea copy-textarea"
+            readonly={result >= 0}
+            maxlength={copyInputLimit(lessonText)}
+            autocapitalize="characters"
+            autocomplete="off"
+            spellcheck="false"></textarea>
+        </label>
+      {/if}
+
+      {#if result >= 0}
+        <p class="result-line" aria-live="polite">
+          {m.trainer_result_last({ percent: formatPercent(result) })}
+          <button type="button" class="quiet-btn" onclick={() => (showOverlay = true)}>
+            {m.trainer_result_review()}
+          </button>
+        </p>
+      {/if}
+
+      <div class="action-row">
+        {#if sessionStarted && result < 0}
+          <button
+            type="button"
+            class="btn-primary"
+            aria-keyshortcuts="Control+Enter Meta+Enter"
+            onclick={handleCheck}
+            disabled={!checkEnabled}
+            >{m.trainer_check()}<kbd class="score-shortcut" aria-hidden="true">Ctrl / ⌘ + Enter</kbd
+            ></button
+          >
+        {/if}
+        {#if sessionStarted}
+          <button
+            type="button"
+            class="btn-ghost"
+            onclick={requestNewExercise}
+            disabled={savePending}>{m.trainer_try_again()}</button
+          >
+        {/if}
+        {#if persistenceStatus === 'failed'}<button
+            type="button"
+            class="btn-ghost"
+            onclick={() => {
+              showOverlay = true;
+              onRetrySave?.();
+            }}>{m.lesson_retry_save()}</button
+          >{/if}
+      </div>
+    </div>
+  {/snippet}
   <div class="player-wrapper">
     {#key context}<MorsePlayer
         exposureSource={context === 'words'
@@ -309,10 +439,14 @@
         bind:freq={settings.freq}
         bind:volume={settings.volume}
         bind:startDelay={settings.startDelay}
+        onVolumeChange={(volume) => {
+          attempt = { ...attempt, settings: { ...attempt.settings, volume } };
+        }}
         onBeforeSettingsInput={confirmReplaceExercise}
         onSettingsInput={() => regenerate()}
         showSettings
         practiceLayout
+        afterTransport={answerControls}
         playTone={sessionStarted ? 'quiet' : 'primary'}
         showTransportExtras={transportLive}
         onStart={handleStart}
@@ -322,67 +456,10 @@
       />{/key}
   </div>
 
-  <div class="answer-section" class:hidden={!sessionStarted}>
-    {#if sessionStarted}
-      <label class="field">
-        <span class="label-text">{m.trainer_answer_label()}</span>
-        <textarea
-          bind:this={answerEl}
-          bind:value={() => inputText, (value) => (inputText = boundCopyInput(lessonText, value))}
-          class="textarea copy-textarea"
-          placeholder={m.trainer_answer_placeholder()}
-          readonly={result >= 0}
-          maxlength={copyInputLimit(lessonText)}
-          autocapitalize="characters"
-          autocomplete="off"
-          spellcheck="false"></textarea>
-      </label>
-    {/if}
-
-    {#if result >= 0}
-      <p class="result-line" aria-live="polite">
-        {m.trainer_result_last({ percent: formatPercent(result) })}
-        <button type="button" class="quiet-btn" onclick={() => (showOverlay = true)}>
-          {m.trainer_result_review()}
-        </button>
-      </p>
-    {/if}
-
-    <p class="key-hints">
-      {#if !sessionStarted}
-        <span class="key-hint"><kbd>Space</kbd> {m.trainer_hint_start()}</span>
-      {:else if !transportLive}
-        <span class="key-hint"><kbd>Space</kbd> {m.trainer_hint_play()}</span>
-      {/if}
-      {#if sessionStarted && result < 0}<span class="key-hint"
-          ><kbd>Enter</kbd> {m.trainer_hint_check()}</span
-        >{/if}
-      {#if transportLive}<span class="key-hint"><kbd>Esc</kbd> {m.trainer_hint_stop()}</span>{/if}
-    </p>
-
-    <div class="action-row">
-      {#if sessionStarted && result < 0}
-        <button type="button" class="btn-primary" onclick={handleCheck} disabled={!checkEnabled}
-          >{m.trainer_check()}</button
-        >
-      {/if}
-      {#if sessionStarted}
-        <button type="button" class="btn-ghost" onclick={requestNewExercise} disabled={savePending}
-          >{m.trainer_try_again()}</button
-        >
-      {/if}
-      {#if persistenceStatus === 'failed'}<button
-          type="button"
-          class="btn-ghost"
-          onclick={() => (showOverlay = true)}>{m.lesson_retry_save()}</button
-        >{/if}
-    </div>
-  </div>
-
-  {#if showOverlay}
+  {#if showOverlay && comparison}
     <ResultOverlay
       {result}
-      {diffTokens}
+      {comparison}
       contentLabel={context === 'groups'
         ? undefined
         : context === 'words'
@@ -419,9 +496,10 @@
     --practice-card-padding: var(--space-6);
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-6);
+    gap: var(--space-3);
     width: 100%;
     isolation: isolate;
+    container: copy-practice / inline-size;
   }
   .continuous-copy-practice::before {
     content: '';
@@ -431,10 +509,78 @@
     border-radius: var(--radius-lg);
     z-index: -1;
   }
-  .console-head {
+  .passage-setup {
     grid-column: 1;
     grid-row: 1;
     margin: var(--practice-card-padding) var(--practice-card-padding) 0;
+    min-width: 0;
+  }
+  .compact-setup {
+    display: none;
+  }
+  @container copy-practice (width < 16rem) {
+    .compact-setup {
+      display: grid;
+      gap: var(--space-1);
+      overflow-wrap: anywhere;
+    }
+    .compact-setup p {
+      margin: 0;
+    }
+    .compact-characters {
+      color: var(--text-secondary);
+      font-size: var(--text-sm);
+    }
+    .setup-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-self: start;
+      gap: var(--space-1);
+      min-height: max(44px, 2em);
+      max-width: 100%;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--accent);
+      font: inherit;
+      text-align: start;
+      cursor: pointer;
+    }
+    .setup-toggle :global(svg) {
+      flex: none;
+    }
+    .setup-toggle[aria-expanded='true'] :global(svg) {
+      transform: rotate(90deg);
+    }
+    .ready-selectors:not(.editing) {
+      display: none;
+    }
+    .session-state.ready-cue {
+      display: contents;
+    }
+    .ready-cue .audio-length,
+    .ready-cue .copy-cue {
+      grid-column: 1;
+      margin-inline: var(--practice-card-padding);
+    }
+    .ready-cue .audio-length {
+      grid-row: 2;
+      margin-bottom: var(--space-2);
+    }
+    .ready-cue .copy-cue {
+      grid-row: 5;
+      margin-bottom: var(--practice-card-padding);
+      font-size: var(--text-sm);
+    }
+  }
+  .setup-details summary {
+    min-height: var(--answer-target-min);
+    padding-block: var(--space-2);
+  }
+  .setup-details[open] .console-head {
+    margin-top: var(--space-2);
+  }
+  .console-head {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-4);
@@ -467,6 +613,19 @@
     font-size: var(--text-base);
     color: var(--text-secondary);
   }
+  .ready-cue {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+  .audio-length {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-variant-numeric: tabular-nums;
+  }
   .player-wrapper {
     display: contents;
   }
@@ -474,6 +633,7 @@
     grid-column: 1;
     grid-row: 5;
     margin: 0 var(--practice-card-padding) var(--practice-card-padding);
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
@@ -501,21 +661,15 @@
     font: inherit;
     min-height: var(--answer-target-min);
   }
-  .key-hints {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-3);
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    margin: 0;
+  .score-shortcut {
+    display: none;
   }
-  .key-hint {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-  }
-  .key-hint kbd {
-    font-family: var(--font-mono);
+  @media (hover: hover) and (pointer: fine) {
+    .score-shortcut {
+      display: inline;
+      font: var(--text-xs) var(--font-mono);
+      margin-inline-start: var(--space-2);
+    }
   }
   .action-row {
     display: flex;
@@ -529,6 +683,11 @@
     .action-row {
       flex-direction: column;
     }
+    .action-row button {
+      max-width: 100%;
+      padding-inline: min(var(--space-4), 4%);
+      overflow-wrap: anywhere;
+    }
   }
   .ready {
     row-gap: 0;
@@ -536,7 +695,7 @@
   .ready :global(.player-playhead) {
     display: none;
   }
-  .ready .console-head {
+  .ready .passage-setup {
     margin-bottom: var(--space-2);
   }
   .ready :global(.player-media-controls) {
@@ -547,7 +706,7 @@
   }
   @media (max-width: 959px) {
     .continuous-copy-practice {
-      --practice-card-padding: var(--space-4);
+      --practice-card-padding: min(var(--space-4), 5vw);
     }
   }
   .answer-section.hidden {

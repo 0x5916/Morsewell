@@ -93,7 +93,7 @@ try {
       await expect(
         page.getByRole('heading', { name: 'Learner report · ' + learner })
       ).toBeVisible();
-      await expect(page.getByText('Practice: Lesson 2')).toBeVisible();
+      await expect(page.getByText('Passage practice', { exact: true })).toBeVisible();
       await expect(page.getByText('88%', { exact: true })).toBeVisible();
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)

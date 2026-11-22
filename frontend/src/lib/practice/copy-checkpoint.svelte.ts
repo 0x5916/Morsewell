@@ -48,6 +48,7 @@ export function createCopyCheckpointStore(overrides: Partial<CopyCheckpointPorts
   let clearing = false;
   let lease: (() => Promise<void>) | null = null;
   let lastCheckpoint: CopyCheckpoint | null = null;
+  let savedResultId: string | null = null;
   let writes = Promise.resolve();
 
   const current = (owner: string, version: number) =>
@@ -75,10 +76,11 @@ export function createCopyCheckpointStore(overrides: Partial<CopyCheckpointPorts
     restore = null;
     hasWork = false;
     lastCheckpoint = null;
+    savedResultId = null;
     try {
       const release = lease;
       lease = null;
-      await release?.();
+      if (release) await writes.finally(release);
       if (!current(owner, version)) return;
       const checkpoint = await ports.load(owner, 'copy');
       if (!current(owner, version)) return;
@@ -161,23 +163,25 @@ export function createCopyCheckpointStore(overrides: Partial<CopyCheckpointPorts
     const owner = ports.owner();
     clearing = true;
     try {
-      await enqueue(async () => {
-        await ports.remove(owner, 'copy');
-        lastCheckpoint = null;
-      }, owner);
+      // Keep the in-memory draft until navigation succeeds. A failed departure
+      // can still be cancelled or retried with “Save and continue”.
+      await enqueue(() => ports.remove(owner, 'copy'), owner);
     } finally {
       clearing = false;
     }
   }
 
   /** Remove the checkpoint only when it still belongs to the saved attempt. */
-  async function clearForAttempt(attemptId: string) {
-    const owner = ports.owner();
+  async function clearForAttempt(attemptId: string, owner = ports.owner()) {
+    if (owner === ports.owner()) savedResultId = attemptId;
     await enqueue(async () => {
       const checkpoint = await ports.load(owner, 'copy');
-      if (checkpoint?.kind !== 'copy' || checkpoint.attempt.id !== attemptId) return;
-      await ports.remove(owner, 'copy');
-      lastCheckpoint = null;
+      if (checkpoint?.kind === 'copy' && checkpoint.attempt.id === attemptId)
+        await ports.remove(owner, 'copy');
+      if (owner === ports.owner() && lastCheckpoint?.attempt.id === attemptId) {
+        lastCheckpoint = null;
+        hasWork = false;
+      }
     }, owner);
   }
 
@@ -192,7 +196,7 @@ export function createCopyCheckpointStore(overrides: Partial<CopyCheckpointPorts
   }
 
   function checkpoint(attempt: CopyAttempt, draft: string) {
-    if (clearing || !attempt.id || !attempt.exercise.text) return;
+    if (clearing || !attempt.id || attempt.id === savedResultId || !attempt.exercise.text) return;
     const owner = ports.owner();
     if (attempt.session.status === 'ready' && !hasWork) return;
     const clear = attempt.session.status === 'ready';
@@ -210,8 +214,21 @@ export function createCopyCheckpointStore(overrides: Partial<CopyCheckpointPorts
     enqueue(() => (clear ? ports.remove(owner, 'copy') : ports.save(owner, value)), owner);
   }
 
-  function whenIdle(): Promise<void> {
-    return writes;
+  async function whenIdle(): Promise<void> {
+    let pending: Promise<void>;
+    do {
+      pending = writes;
+      await pending;
+    } while (pending !== writes);
+  }
+
+  async function flushForDeparture(): Promise<boolean> {
+    const owner = ports.owner();
+    const version = loadVersion;
+    if (clearing || !lastCheckpoint) return false;
+    retry();
+    await whenIdle();
+    return current(owner, version) && !saveError;
   }
 
   async function dispose() {
@@ -249,6 +266,7 @@ export function createCopyCheckpointStore(overrides: Partial<CopyCheckpointPorts
     clear,
     clearForAttempt,
     whenIdle,
+    flushForDeparture,
     dispose
   };
 }

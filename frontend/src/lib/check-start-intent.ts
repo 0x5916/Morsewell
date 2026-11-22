@@ -19,3 +19,19 @@ export function consumeCheckStart(href: string): AudioEngine | undefined {
   if (intent?.href === href) return intent.audio;
   void intent?.audio.dispose();
 }
+
+/** Only an unmodified activation of a labeled check link arms audio for this tab. */
+export function prepareCheckLink(event: MouseEvent) {
+  const link = event.currentTarget as HTMLAnchorElement;
+  const query = new URLSearchParams(link.search);
+  if (
+    query.has('check') &&
+    !query.has('resume') &&
+    event.button === 0 &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    !event.altKey
+  )
+    armCheckStart(link.pathname + link.search);
+}

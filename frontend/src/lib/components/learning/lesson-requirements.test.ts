@@ -38,7 +38,7 @@ describe('masteryRequirements', () => {
     expect(requirements[2].current).toBeUndefined();
     expect(requirements[3].value).toBe(
       m.learn_unlock_speed_missing_value({
-        required: (DEFAULT_MASTERY_POLICY.maxAutomaticLatencyMs / 1000).toFixed(3)
+        required: String(DEFAULT_MASTERY_POLICY.maxAutomaticLatencyMs / 1000)
       })
     );
   });
@@ -57,7 +57,7 @@ describe('masteryRequirements', () => {
       target: DEFAULT_MASTERY_POLICY.targetAccuracy
     });
     expect(requirements.find((requirement) => requirement.id === 'speed')?.value).toBe(
-      m.learn_unlock_speed_value({ current: '1.800', required: '1.500' })
+      m.learn_unlock_speed_value({ current: '1.8', required: '1.5' })
     );
   });
 

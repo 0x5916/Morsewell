@@ -3,7 +3,7 @@
   import { createEvidenceAudioEngine } from '#lib/audio/evidence-engine.ts';
   import type { AudioEngine } from '#lib/audio/engine.ts';
   import { formatClock } from '#lib/format.ts';
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, untrack, type Snippet } from 'svelte';
   import { Play, Square, Pause, SlidersHorizontal, SkipForward, CircleAlert } from '@lucide/svelte';
   import {
     createPlaybackController,
@@ -29,6 +29,7 @@
     label?: string;
     showSettings?: boolean;
     practiceLayout?: boolean;
+    afterTransport?: Snippet;
     /* 'primary' keeps the play control accented; 'quiet' dresses it as a secondary
        action once the passage has already been played through once. */
     playTone?: 'primary' | 'quiet';
@@ -37,6 +38,7 @@
     showTransportExtras?: boolean;
     onBeforeSettingsInput?: () => boolean | Promise<boolean>;
     onSettingsInput?: () => void;
+    onVolumeChange?: (volume: number) => void;
     /* Fired whenever playback starts, whichever control started it. The page
        uses it to unlock the answer box or mask the drill character. */
     onStart?: () => void;
@@ -60,10 +62,12 @@
     label = '',
     showSettings = false,
     practiceLayout = false,
+    afterTransport,
     playTone = 'primary',
     showTransportExtras = true,
     onBeforeSettingsInput = () => true,
     onSettingsInput = () => {},
+    onVolumeChange = () => {},
     onStart = () => {},
     onEnded = () => {},
     onPausedChange = () => {},
@@ -298,6 +302,14 @@
     ({ charWpm, effWpm, freq, volume, startDelay } = next);
   }
 
+  function adjustVolume(event: Event) {
+    volume = normalizePlaybackSettings({
+      volume: (event.currentTarget as HTMLInputElement).valueAsNumber
+    }).volume;
+    transport.setVolume(volume);
+    onVolumeChange(volume);
+  }
+
   async function commitSetting(key: keyof PlaybackSettings, event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     const next = normalizePlaybackSettings({ ...settings, [key]: input.valueAsNumber });
@@ -366,7 +378,8 @@
             class="btn-icon"
             onclick={() => transport.stop()}
             aria-label={m.player_stop()}
-            title={m.player_stop()}
+            aria-keyshortcuts="Escape"
+            title={m.practice_stop_shortcut()}
           >
             <Square size={16} />
           </button>
@@ -410,6 +423,7 @@
           </span>
         {/if}
       </div>
+      {@render afterTransport?.()}
       {#if showSettings}
         <div class="player-settings-region">
           <details class="player-settings-menu" bind:this={settingsEl} bind:open={settingsOpen}>
@@ -477,7 +491,7 @@
                     max="1"
                     step="0.05"
                     class="player-volume-slider"
-                    onchange={(event) => commitSetting('volume', event)}
+                    oninput={adjustVolume}
                   />
                   <span class="player-volume-value">{Math.round(volume * 100)}%</span>
                 </div>
@@ -501,7 +515,7 @@
               {/if}
             </div>
           </details>
-          {#if practiceLayout}
+          {#if practiceStart}
             <p class="audio-summary">
               {m.practice_speed_summary({
                 character: settings.charWpm,
@@ -816,6 +830,11 @@
   }
   .audio-settings-summary {
     width: fit-content;
+    max-width: calc(100% - 1em);
+    margin-inline-start: 1em;
+    list-style-position: outside;
+    overflow-wrap: anywhere;
+    hyphens: auto;
     min-height: var(--answer-target-min);
     padding-block: var(--space-2);
     color: var(--text-primary);
@@ -851,6 +870,19 @@
   }
   .practice-layout .player-play-label {
     overflow-wrap: anywhere;
+  }
+  @container copy-practice (width < 16rem) {
+    .practice-layout .player-media-controls {
+      --player-control-height: 48px;
+    }
+    .practice-layout .player-media-controls .btn-icon {
+      width: var(--player-control-height);
+      height: var(--player-control-height);
+    }
+    .practice-layout .training-start {
+      padding-inline: var(--space-1);
+      column-gap: var(--space-1);
+    }
   }
   .practice-layout .player-error {
     grid-column: 1;

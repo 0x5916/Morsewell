@@ -8,13 +8,14 @@ export function practiceKeyIntent(event: KeyboardEvent): PracticeKeyIntent | nul
     event.isComposing ||
     event.keyCode === 229 ||
     event.altKey ||
-    event.ctrlKey ||
-    event.metaKey ||
     event.shiftKey
   )
     return null;
   const target = event.target as Element | null;
   if (target?.closest?.('dialog[open], [aria-modal="true"], details[open]')) return null;
+  if (event.ctrlKey || event.metaKey) {
+    return event.key === 'Enter' && target?.closest?.('textarea') ? 'check' : null;
+  }
   if (event.key === 'Escape')
     return target?.closest?.('select, input, [contenteditable]:not([contenteditable="false"])')
       ? null
@@ -23,7 +24,6 @@ export function practiceKeyIntent(event: KeyboardEvent): PracticeKeyIntent | nul
     'button, input, select, a, summary, [contenteditable]:not([contenteditable="false"])'
   );
   if (nativeControl) return null;
-  if (event.key === 'Enter') return 'check';
   if (event.key === ' ' && !target?.closest?.('textarea')) return 'replay';
   return null;
 }

@@ -3,16 +3,19 @@ import type {
   HistorySessionRecord,
   TrainingSessionRecord
 } from '../training/v2/types';
-import { attemptToWire, sessionToWire } from '../training-wire';
+import { attemptToWire } from '../training-wire';
 import { hasPendingTrainingPersistence } from '../pending-training-persistence';
 import { reqToPromise, withTransaction } from './training-db';
 import { OWNED_STORES, TRAINING_STORES } from './training-schema';
 import {
+  canonicalSessionRecord,
   enqueueFrozen,
   isNativeSession,
   ownedRecords,
   payloadKey,
   persistSession,
+  practiceContextsConflict,
+  samePracticeResult,
   stripOwner,
   type FrozenOutboxRecord,
   type Owned,
@@ -49,13 +52,7 @@ export function canonicalImportRecord(
       entered_text: wire.entered_text.trim()
     });
   }
-  const wire = sessionToWire(value as TrainingSessionRecord);
-  return payloadKey({
-    ...wire,
-    started_at: new Date(wire.started_at).toISOString(),
-    ended_at: wire.ended_at ? new Date(wire.ended_at).toISOString() : null,
-    event_ids: [...(wire.event_ids ?? [])].sort()
-  });
+  return canonicalSessionRecord(value as TrainingSessionRecord);
 }
 
 export async function getTrainingInstallationId(db: IDBDatabase): Promise<string> {
@@ -182,13 +179,21 @@ export function createTrainingSyncRepository(db: IDBDatabase, ownerKey: string) 
               const pending = await reqToPromise(
                 stores[OWNED_STORES.outbox].get([ownerKey, kind, record.id])
               );
-              if (!pending)
-                await reqToPromise(
-                  stores[kind === 'attempt' ? OWNED_STORES.attempts : OWNED_STORES.sessions].put({
-                    ...record,
-                    ownerKey
-                  })
+              if (pending) continue;
+              const store =
+                stores[kind === 'attempt' ? OWNED_STORES.attempts : OWNED_STORES.sessions];
+              if ('mode' in record && record.mode === 'practice') {
+                const local = await reqToPromise<Owned<HistorySessionRecord> | undefined>(
+                  store.get([ownerKey, record.id])
                 );
+                if (local?.practiceContext && samePracticeResult(local, record)) {
+                  await reqToPromise(
+                    store.put({ ...record, practiceContext: local.practiceContext, ownerKey })
+                  );
+                  continue;
+                }
+              }
+              await reqToPromise(store.put({ ...record, ownerKey }));
             }
           }
           await reqToPromise(
@@ -287,6 +292,15 @@ export function createTrainingSyncRepository(db: IDBDatabase, ownerKey: string) 
                 }
               } catch {
                 throw new Error(`Device history ID conflict: ${record.id}`);
+              }
+              if (nativeSession?.mode === 'practice' && nativeSession.practiceContext) {
+                const saved = existing as Owned<TrainingSessionRecord>;
+                if (practiceContextsConflict(saved.practiceContext, nativeSession.practiceContext))
+                  throw new Error(`Device history ID conflict: ${record.id}`);
+                if (!saved.practiceContext)
+                  await reqToPromise(
+                    target.put({ ...saved, practiceContext: nativeSession.practiceContext })
+                  );
               }
             } else if (kind === 'attempt') {
               await reqToPromise(target.add({ ...record, ownerKey }));

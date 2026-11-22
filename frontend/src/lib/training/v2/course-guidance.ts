@@ -1,6 +1,11 @@
 import { LESSONS } from '../sequence';
 import { getHistoricalStability, reduceCharacterMastery } from './mastery';
-import { DEFAULT_MASTERY_POLICY, type AttemptEvent, type CharacterMastery } from './types';
+import {
+  DEFAULT_MASTERY_POLICY,
+  type AttemptEvent,
+  type CharacterMastery,
+  type MasteryPolicy
+} from './types';
 
 export type CoursePathItemStatus =
   'stable' | 'current' | 'review' | 'available' | 'locked' | 'legacy-unverified';
@@ -35,6 +40,7 @@ export interface CourseGuidanceOptions {
    * review readiness still come from `attempts` (the caller's recent window).
    */
   history?: readonly AttemptEvent[];
+  policy?: MasteryPolicy;
 }
 
 /**
@@ -53,23 +59,30 @@ export function deriveCourseGuidance(
   options: CourseGuidanceOptions = {}
 ) {
   const history = options.history ?? attempts;
+  const policy = options.policy ?? DEFAULT_MASTERY_POLICY;
+  const remainingMasteries: CharacterMastery[] = [];
   const masteryMap = new Map<string, CharacterMastery>();
   const reviewChars: string[] = [];
   let currentStep = 1;
 
   for (let index = 0; index < lessons.length; index++) {
-    let achieved = true;
     for (const character of lessons[index]) {
-      const mastery = reduceCharacterMastery(character, attempts, { nowIso });
+      const mastery = reduceCharacterMastery(character, attempts, { nowIso, policy });
       masteryMap.set(character, mastery);
       if (mastery.status === 'review') reviewChars.push(character);
-      if (!getHistoricalStability(character, history, DEFAULT_MASTERY_POLICY).achieved)
-        achieved = false;
+      if (!getHistoricalStability(character, history, policy).achieved) {
+        remainingMasteries.push(
+          history === attempts
+            ? mastery
+            : reduceCharacterMastery(character, history, { nowIso, policy })
+        );
+      }
     }
     currentStep = index + 1;
-    if (!achieved)
+    if (remainingMasteries.length)
       return {
         currentStep,
+        remainingMasteries,
         unlockedStep: currentStep,
         masteryMap,
         reviewChars,
@@ -79,6 +92,7 @@ export function deriveCourseGuidance(
 
   return {
     currentStep,
+    remainingMasteries,
     unlockedStep: lessons.length,
     masteryMap,
     reviewChars,

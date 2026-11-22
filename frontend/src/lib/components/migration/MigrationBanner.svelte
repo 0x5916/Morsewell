@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
-  import { CircleAlert, CloudCheck, CloudUpload, HardDrive, Megaphone, X } from '@lucide/svelte';
+  import { onDestroy, onMount, type Snippet } from 'svelte';
+  import { CircleAlert, CloudUpload, HardDrive, Megaphone, X } from '@lucide/svelte';
   import { localizedHref } from '#lib/i18n.svelte.ts';
   import * as m from '#lib/paraglide/messages.js';
   import {
@@ -26,6 +26,7 @@
     trainingSyncState
   } from '#lib/training-sync.svelte.ts';
 
+  let { children }: { children: Snippet } = $props();
   let mounted = $state(false);
   let context = $state.raw<MigrationBannerContext | null>(null);
   let refreshVersion = 0;
@@ -86,9 +87,7 @@
     )
   );
 
-  const compact = $derived(
-    bannerState?.kind === 'guest-empty' || bannerState?.kind === 'signed-in-empty'
-  );
+  const compact = $derived(bannerState && !bannerState.critical);
   const showRegister = $derived(
     Boolean(
       bannerState &&
@@ -221,107 +220,98 @@
   >
 {/snippet}
 
-{#if visible && bannerState && context}
-  <aside
-    class="migration-banner"
-    class:compact
-    class:warning={bannerState.tone === 'warning'}
-    class:danger={bannerState.tone === 'danger'}
-    role={bannerState.critical ? 'alert' : 'status'}
-    aria-live={bannerState.critical ? 'assertive' : 'polite'}
-    aria-labelledby="migration-banner-title"
-    aria-describedby={bannerState.showCheckpoint
-      ? 'migration-banner-body migration-banner-checkpoint'
-      : 'migration-banner-body'}
-  >
-    <h2 id="migration-banner-title">
-      {#if !compact}
-        <span class="migration-icon" aria-hidden="true">
-          {#if bannerState.kind === 'sync-pending'}
-            <CloudUpload size={20} />
-          {:else if bannerState.kind === 'sync-failed'}
-            <CircleAlert size={20} />
-          {:else if bannerState.kind === 'signed-in-ok'}
-            <CloudCheck size={20} />
-          {:else if bannerState.kind === 'guest-history' || bannerState.kind === 'signed-in-unclaimed'}
-            <HardDrive size={20} />
-          {:else}
-            <Megaphone size={20} />
-          {/if}
-        </span>
-      {/if}
-      {titleFor(bannerState.kind)}
-    </h2>
-
-    <p id="migration-banner-body" class="migration-body">
-      {bodyFor(bannerState.kind)}
-      {#if showRegister && bannerState.kind !== 'guest-history'}
-        <a class="link" href={localizedHref('/register')}>{m.migration_register_cta()}</a>
-      {:else if compact}
-        <a class="link" href={`${localizedHref('/settings')}#sync-storage`}
-          >{m.migration_sync_details_cta()}</a
-        >
-      {/if}
-      {#if compact}{@render recoveryLink()}{/if}
-    </p>
-
-    {#if bannerState.showCheckpoint}
-      <p id="migration-banner-checkpoint" class="migration-body">{m.migration_checkpoint_body()}</p>
-    {/if}
-    {#if !compact}
-      <div class="migration-actions">
-        {#if showFinishSaved && context.checkpointHref}
-          <a class="btn-primary" href={localizedHref(context.checkpointHref)}>
-            {m.migration_finish_saved_cta()}
-          </a>
+{#snippet announcement()}
+  {#if visible && bannerState && context}
+    <aside
+      class="migration-banner"
+      class:compact
+      class:warning={bannerState.tone === 'warning'}
+      class:danger={bannerState.tone === 'danger'}
+      role={bannerState.critical ? 'alert' : 'status'}
+      aria-live={bannerState.critical ? 'assertive' : 'polite'}
+      aria-labelledby="migration-banner-title"
+      aria-describedby="migration-banner-body"
+    >
+      <h2 id="migration-banner-title">
+        {#if !compact}
+          <span class="migration-icon" aria-hidden="true">
+            {#if bannerState.kind === 'sync-pending'}
+              <CloudUpload size={20} />
+            {:else if bannerState.kind === 'sync-failed'}
+              <CircleAlert size={20} />
+            {:else if bannerState.kind === 'signed-in-unclaimed'}
+              <HardDrive size={20} />
+            {:else}
+              <Megaphone size={20} />
+            {/if}
+          </span>
         {/if}
-        {#if showRetry}
-          <button
-            type="button"
-            class="btn-primary"
-            disabled={retrying || trainingSyncState.syncing || learningSyncState.syncing}
-            onclick={retrySync}
+        {titleFor(bannerState.kind)}
+      </h2>
+
+      <p id="migration-banner-body" class="migration-body">
+        {bodyFor(bannerState.kind)}
+        {#if showRegister}
+          <a class="link" href={localizedHref('/register')}>{m.migration_register_cta()}</a>
+        {:else if compact}
+          <a class="link" href={`${localizedHref('/settings')}#sync-storage`}
+            >{m.migration_sync_details_cta()}</a
           >
-            {m.migration_retry_sync_cta()}
-          </button>
         {/if}
-        {#if bannerState.kind !== 'guest-history'}
+        {#if compact}{@render recoveryLink()}{/if}
+      </p>
+
+      {#if !compact}
+        <div class="migration-actions">
+          {#if showRetry}
+            <button
+              type="button"
+              class="btn-primary"
+              disabled={retrying || trainingSyncState.syncing || learningSyncState.syncing}
+              onclick={retrySync}
+            >
+              {m.migration_retry_sync_cta()}
+            </button>
+          {/if}
           <a
-            class={bannerState.critical && !showRetry && !showRegister
-              ? 'btn-primary'
-              : 'link standalone-target'}
+            class={!showRetry && !showRegister ? 'btn-primary' : 'link standalone-target'}
             href={`${localizedHref('/settings')}#sync-storage`}>{m.migration_sync_details_cta()}</a
           >
-        {/if}
-        {@render recoveryLink()}
-      </div>
-    {/if}
-    {#if bannerState.kind === 'guest-history'}
-      <details class="migration-sync">
-        <summary>{m.migration_guest_sync_heading()}</summary>
-        <p class="migration-body">{m.migration_guest_sync_steps()}</p>
-        <div class="migration-actions">
-          <a class="link standalone-target" href={localizedHref('/register')}
-            >{m.migration_register_cta()}</a
-          >
+          {@render recoveryLink()}
+        </div>
+      {/if}
+      {#if compact && bannerState.kind === 'guest-history'}
+        <details class="migration-sync">
+          <summary>{m.migration_guest_sync_heading()}</summary>
+          <p class="migration-body">{m.migration_guest_sync_steps()}</p>
+          {#if showFinishSaved && context.checkpointHref}
+            <p class="migration-body">{m.migration_checkpoint_body()}</p>
+            <a class="link standalone-target" href={localizedHref(context.checkpointHref)}
+              >{m.migration_finish_saved_cta()}</a
+            >
+          {/if}
           <a class="link standalone-target" href={`${localizedHref('/settings')}#sync-storage`}
             >{m.migration_sync_details_cta()}</a
           >
-        </div>
-      </details>
-    {/if}
+        </details>
+      {/if}
 
-    <button
-      type="button"
-      class="btn-icon migration-dismiss"
-      aria-label={m.migration_dismiss()}
-      title={m.migration_dismiss()}
-      onclick={dismiss}
-    >
-      <X size={18} aria-hidden="true" />
-    </button>
-  </aside>
-{/if}
+      <button
+        type="button"
+        class="btn-icon migration-dismiss"
+        aria-label={m.migration_dismiss()}
+        title={m.migration_dismiss()}
+        onclick={dismiss}
+      >
+        <X size={18} aria-hidden="true" />
+      </button>
+    </aside>
+  {/if}
+{/snippet}
+
+{#if bannerState?.critical}{@render announcement()}{/if}
+{@render children()}
+{#if !bannerState?.critical}{@render announcement()}{/if}
 
 <style>
   .migration-banner {
@@ -337,9 +327,10 @@
   }
 
   .compact {
-    padding: 0 0 var(--space-2);
+    margin: var(--space-6) 0 0;
+    padding: var(--space-3) 0 0;
     border: 0;
-    border-bottom: 1px solid var(--border);
+    border-top: 1px solid var(--border);
     border-radius: 0;
     background: transparent;
   }

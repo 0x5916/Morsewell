@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateProgression } from './progression';
+import { deriveGuidedLessonAccess } from './lesson-access';
 import { reduceCharacterMastery } from './mastery';
 import type { AttemptEvent } from './types';
 
@@ -39,7 +40,7 @@ describe('Progression Decision Engine', () => {
     expect(decision.reasonCode).toBe('free_practice_excluded');
   });
 
-  it('blocks unlock when overall session accuracy is below target (e.g. 80% < 90%)', () => {
+  it('keeps an 80% session score separate from remaining character requirements', () => {
     // 8 correct, 2 wrong -> 80%
     const attempts = [
       ...Array.from({ length: 8 }, (_, i) => createMockAttempt({ id: `c_${i}`, isCorrect: true })),
@@ -50,7 +51,7 @@ describe('Progression Decision Engine', () => {
 
     expect(decision.canUnlock).toBe(false);
     expect(decision.action).toBe('continue');
-    expect(decision.reasonCode).toBe('overall_accuracy_too_low');
+    expect(decision.remainingMasteries.map((mastery) => mastery.character)).toEqual(['K', 'M']);
   });
 
   it('blocks unlock when an individual character is weak despite high aggregate accuracy', () => {
@@ -75,8 +76,8 @@ describe('Progression Decision Engine', () => {
     const decision = evaluateProgression(1, attempts, []);
 
     expect(decision.canUnlock).toBe(false);
-    expect(decision.action).toBe('review');
-    expect(decision.reasonCode).toBe('weak_character_detected');
+    expect(decision.action).toBe('continue');
+    expect(decision.reasonCode).toBe('introduced_character_unstable');
     expect(decision.weakCharacters).toContain('M');
   });
 
@@ -96,7 +97,7 @@ describe('Progression Decision Engine', () => {
     const decision = evaluateProgression(1, session1Attempts, []);
 
     expect(decision.canUnlock).toBe(false);
-    expect(decision.reasonCode).toBe('insufficient_sessions');
+    expect(decision.remainingMasteries.every((mastery) => mastery.sessionCount === 1)).toBe(true);
   });
 
   it('blocks unlock when accurate multi-session answers remain too slow for mastery', () => {
@@ -170,4 +171,65 @@ describe('Progression Decision Engine', () => {
     expect(decision.nextStep).toBe(2);
     expect(decision.unlockedCharacter).toBe('R');
   });
+});
+
+const now = '2026-10-04T12:00:00.000Z';
+function singles(sessionId: string, characters: string) {
+  return [...characters].map((character, index) =>
+    createMockAttempt({
+      id: sessionId + index,
+      sessionId,
+      targetCharacter: character,
+      enteredText: character,
+      createdAt: now
+    })
+  );
+}
+
+it('opens the same lesson as the route when the two missed groups lower the score to 9/11', () => {
+  const history = [...singles('first', 'KMKMKMKMK'), ...singles('second', 'MKMKMKMKM')];
+  const session = [
+    ...singles('third', 'KMKMKMKMK'),
+    ...['KM', 'MK'].map((group) =>
+      createMockAttempt({
+        id: group,
+        sessionId: 'third',
+        promptKind: 'short-group',
+        targetCharacter: group,
+        isCorrect: false,
+        classification: 'incorrect'
+      })
+    )
+  ];
+  const result = evaluateProgression(1, session, history, { nowIso: now });
+  expect(result.sessionAccuracy).toBeCloseTo(9 / 11, 3);
+  expect(result.coaching).toEqual({ kind: 'accuracy' });
+  expect(result.nextStep).toBe(2);
+  expect(deriveGuidedLessonAccess([...history, ...session], now).unlockedStep).toBe(
+    result.nextStep
+  );
+});
+
+it('deduplicates a resumed session and reports the two actual remaining character requirements', () => {
+  const first = singles('first', 'KMKMKMKMK');
+  const second = singles('second', 'KMKMKMKMK');
+  const historyAtResume = [...first, ...second.slice(0, 8)];
+  const result = evaluateProgression(1, second, historyAtResume, { nowIso: now });
+  expect(result.canUnlock).toBe(false);
+  expect(
+    result.remainingMasteries.map((mastery) => [mastery.character, mastery.totalAttempts])
+  ).toEqual([
+    ['K', 10],
+    ['M', 8]
+  ]);
+  expect(deriveGuidedLessonAccess([...first, ...second], now).unlockedStep).toBe(1);
+});
+
+it('keeps an already open lesson available while recommending a weak sound from this session', () => {
+  const history = [...singles('first', 'KM'.repeat(6)), ...singles('second', 'KM'.repeat(6))];
+  const session = singles('third', 'K'.repeat(12) + 'MM');
+  session.at(-1)!.isCorrect = false;
+  const result = evaluateProgression(1, session, history, { nowIso: now });
+  expect(result.coaching).toEqual({ kind: 'characters', characters: ['M'] });
+  expect(result.nextStep).toBe(2);
 });

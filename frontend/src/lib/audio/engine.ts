@@ -20,6 +20,8 @@ export interface AudioEngine {
   prepare?(): Promise<void>;
   /** Schedule a plan on the audio timeline, replacing any current playback. */
   play(plan: AudioPlan): void;
+  /** Change output level without disturbing the scheduled tones or playback clock. */
+  setVolume?(volume: number): void;
   /** Suspend the timeline; safe while idle. */
   pause(): Promise<void>;
   /** Resume a suspended timeline; safe while idle. */
@@ -78,6 +80,7 @@ export function createWebAudioEngine(options: WebAudioEngineOptions = {}): Audio
 
   let ctx: AudioContext | null = null;
   let oscillator: OscillatorNode | null = null;
+  let envelope: GainNode | null = null;
   let outputGain: GainNode | null = null;
   let ctxStartTime = 0;
   let generation = 0;
@@ -100,9 +103,11 @@ export function createWebAudioEngine(options: WebAudioEngineOptions = {}): Audio
     const audio = ctx;
     const oldOscillator = oscillator;
     const oldGain = outputGain;
+    const oldEnvelope = envelope;
     ctx = null;
     oscillator = null;
     outputGain = null;
+    envelope = null;
     // Close the notification window synchronously so a silent stop can never
     // clobber the ended flag of a playback that starts while close() settles.
     const shouldNotify = notify && !endedNotified;
@@ -110,6 +115,7 @@ export function createWebAudioEngine(options: WebAudioEngineOptions = {}): Audio
     // Context shutdown is asynchronous. Cut the output before a replacement
     // can start, even if close() is delayed or fails.
     oldGain?.disconnect();
+    oldEnvelope?.disconnect();
     if (oldOscillator) {
       oldOscillator.onended = null;
       oldOscillator.disconnect();
@@ -142,15 +148,18 @@ export function createWebAudioEngine(options: WebAudioEngineOptions = {}): Audio
     const osc = audio.createOscillator();
     oscillator = osc;
     const gain = audio.createGain();
-    outputGain = gain;
+    envelope = gain;
+    outputGain = audio.createGain();
     osc.connect(gain);
-    gain.connect(audio.destination);
+    gain.connect(outputGain);
+    outputGain.connect(audio.destination);
     osc.frequency.value = plan.frequency;
 
     // Match the original player: read the clock after graph setup and silence
     // the oscillator immediately. A future zero leaves GainNode's default
     // gain of 1 audible throughout the start delay.
     const now = audio.currentTime;
+    outputGain.gain.setValueAtTime(plan.volume, now);
     ctxStartTime = now + START_LEAD_IN;
     const t0 = ctxStartTime + plan.startDelay;
     gain.gain.setValueAtTime(0, now);
@@ -158,8 +167,8 @@ export function createWebAudioEngine(options: WebAudioEngineOptions = {}): Audio
       const start = t0 + event.start;
       const end = start + event.duration;
       gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(plan.volume, start + plan.fade);
-      gain.gain.setValueAtTime(plan.volume, end - plan.fade);
+      gain.gain.linearRampToValueAtTime(1, start + plan.fade);
+      gain.gain.setValueAtTime(1, end - plan.fade);
       gain.gain.linearRampToValueAtTime(0, end);
     }
 
@@ -209,6 +218,12 @@ export function createWebAudioEngine(options: WebAudioEngineOptions = {}): Audio
       if (ctx.state === 'suspended') await ctx.resume();
     },
     play,
+    setVolume(volume) {
+      if (ctx && outputGain && Number.isFinite(volume)) {
+        // Smooth slider changes over a few milliseconds to avoid clicking mid-tone.
+        outputGain.gain.setTargetAtTime(Math.min(1, Math.max(0, volume)), ctx.currentTime, 0.004);
+      }
+    },
     pause,
     resume,
     stop,

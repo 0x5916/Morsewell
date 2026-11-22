@@ -97,3 +97,15 @@ test.describe('training disclosures', () => {
     });
   }
 });
+
+test('the reference player names the selected character and its repeated playback', async ({
+  page
+}) => {
+  await page.goto('/en/morse', { waitUntil: 'networkidle' });
+  await expect(page.locator('.migration-banner')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'K', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Inspect M' }).click();
+  await expect(page.getByRole('heading', { name: 'M', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Hear M five times' })).toBeVisible();
+  await expect(page.getByText('Not scored', { exact: true })).toBeVisible();
+});

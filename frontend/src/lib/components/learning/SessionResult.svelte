@@ -4,6 +4,7 @@
   import { DEFAULT_MASTERY_POLICY, type SessionSummary } from '../../training/v2/types';
   import type { SessionPersistenceStatus } from '../../training/v2/session-controller.svelte';
   import { resultView } from './result-view';
+  import LessonRequirements from './LessonRequirements.svelte';
   import InfoTip from '../InfoTip.svelte';
   import * as m from '#lib/paraglide/messages.js';
 
@@ -26,12 +27,11 @@
   } = $props();
   const view = $derived(resultView(summary));
   const disabled = $derived(busy || persistenceStatus === 'saving');
+  const courseComplete = $derived(persistenceStatus === 'saved' && view.reason === 'complete');
   const recommendation = $derived.by(() => {
     switch (view.reason) {
       case 'next':
         return m.lesson_result_unlocked({ step: view.nextStep!, characters: view.nextCharacters });
-      case 'complete':
-        return m.lesson_result_course_complete();
       case 'accuracy':
         return m.lesson_result_accuracy_hint({
           percent: Math.round(DEFAULT_MASTERY_POLICY.targetAccuracy * 100)
@@ -43,7 +43,7 @@
       case 'sessions':
         return m.lesson_result_more_sessions();
       default:
-        return m.lesson_result_continue();
+        return '';
     }
   });
   function focusHeading(heading: HTMLElement) {
@@ -58,60 +58,79 @@
     </p>
     <h1 tabindex="-1" {@attach focusHeading}>
       <Check size={28} aria-hidden="true" />
-      {view.reason === 'complete' ? m.lesson_result_course_title() : m.lesson_result_title()}
+      {courseComplete ? m.lesson_result_course_title() : m.lesson_result_title()}
     </h1>
   </header>
 
-  <p class="recommendation">{recommendation}</p>
-
   <dl class="metrics accuracy-summary">
     <div>
-      <dt>{m.lesson_result_accuracy()}</dt>
+      <dt>
+        {view.accuracyPercent === null
+          ? m.lesson_result_accuracy()
+          : m.lesson_result_count({
+              correct: summary.correctAttempts,
+              total: summary.scoredAttempts
+            })}
+      </dt>
       <dd class="value" class:unmeasured={view.accuracyPercent === null}>
         {view.accuracyPercent === null
           ? m.lesson_result_insufficient()
           : `${view.accuracyPercent}%`}
       </dd>
-      {#if view.accuracyPercent !== null}<dd class="detail">
-          {m.lesson_result_count({
-            correct: summary.correctAttempts,
-            total: summary.scoredAttempts
-          })}
-        </dd>{/if}
     </div>
   </dl>
+  {#if persistenceStatus === 'saved' && recommendation}<p class="recommendation">
+      {recommendation}
+    </p>{/if}
 
   <div class="storage">{@render storageStatus?.()}</div>
 
   <footer>
-    <button
-      type="button"
-      class={persistenceStatus === 'failed' ? 'btn-ghost' : 'btn-primary'}
-      {disabled}
-      onclick={view.action === 'next'
-        ? onNextLesson
-        : view.action === 'finish'
-          ? onFinish
-          : onRepeatLesson}
-    >
-      {view.action === 'next'
-        ? m.lesson_result_next()
-        : view.action === 'finish'
-          ? m.lesson_result_finish()
-          : m.lesson_result_repeat()}
-    </button>
+    {#if persistenceStatus === 'saved'}<button
+        type="button"
+        class="btn-primary"
+        {disabled}
+        onclick={view.action === 'next'
+          ? onNextLesson
+          : view.action === 'finish'
+            ? onFinish
+            : onRepeatLesson}
+      >
+        {view.action === 'next'
+          ? m.lesson_result_next()
+          : view.action === 'finish'
+            ? m.lesson_result_finish()
+            : m.lesson_result_repeat()}
+      </button>{/if}
     <button
       type="button"
       class="btn-ghost"
       {disabled}
-      onclick={view.action === 'finish' ? onRepeatLesson : onFinish}
+      onclick={courseComplete ? onRepeatLesson : onFinish}
     >
-      {view.action === 'finish' ? m.lesson_result_repeat() : m.lesson_result_finish()}
+      {courseComplete ? m.lesson_result_repeat() : m.lesson_result_finish()}
     </button>
   </footer>
 
+  {#if persistenceStatus === 'saved' && summary.remainingMasteries?.length}
+    <LessonRequirements
+      unlockTitle={m.lesson_result_requirements()}
+      remainingMasteries={summary.remainingMasteries}
+    />
+  {/if}
+
   <details class="result-details ui-disclosure">
     <summary>{m.lesson_result_details()}</summary>
+    {#if persistenceStatus === 'saved' && summary.coaching}<p class="detail">
+        {#if summary.coaching.kind === 'accuracy'}{m.lesson_session_aim({
+            percent: Math.round(DEFAULT_MASTERY_POLICY.targetAccuracy * 100)
+          })}
+        {:else if summary.coaching.kind === 'characters'}{m.lesson_session_review({
+            characters: summary.coaching.characters.join(', ')
+          })}
+        {:else}{m.lesson_session_sample()}{/if}
+      </p>{/if}
+
     <dl class="metrics">
       <div>
         <dt>
@@ -236,10 +255,6 @@
   }
   .accuracy-summary .value {
     text-align: end;
-  }
-  .accuracy-summary .detail {
-    grid-column: 1 / -1;
-    margin: 0;
   }
   .result-details {
     text-align: start;

@@ -7,6 +7,8 @@
     onConfirm: () => void;
     onCancel: () => void;
     onSaveLeave?: () => void;
+    saveLabel?: string;
+    busy?: boolean;
     returnFocusTo?: HTMLElement | null;
     fallbackFocus?: HTMLElement | null;
     title?: string;
@@ -19,6 +21,8 @@
     isOpen = false,
     onConfirm = () => {},
     onSaveLeave,
+    saveLabel,
+    busy = false,
     onCancel = () => {},
     returnFocusTo = null,
     fallbackFocus = null,
@@ -29,12 +33,15 @@
   }: Props = $props();
 
   let dialogEl = $state<HTMLDialogElement | null>(null);
+  let heading: HTMLHeadingElement;
   const dialogId = $props.id();
 
   $effect(() => {
     if (!dialogEl) return;
     if (isOpen && !dialogEl.open) {
       dialogEl.showModal();
+      heading.focus({ preventScroll: true });
+      dialogEl.scrollTo({ top: 0, behavior: 'instant' });
     } else if (!isOpen && dialogEl.open) {
       dialogEl.close();
       (returnFocusTo?.isConnected ? returnFocusTo : fallbackFocus)?.focus();
@@ -42,7 +49,7 @@
   });
 
   function handleBackdropClick(event: MouseEvent) {
-    if (event.target !== dialogEl || !dialogEl) return;
+    if (busy || event.target !== dialogEl || !dialogEl) return;
     const { left, right, top, bottom } = dialogEl.getBoundingClientRect();
     if (
       event.clientX < left ||
@@ -81,24 +88,26 @@
   bind:this={dialogEl}
   oncancel={(event) => {
     event.preventDefault();
-    onCancel();
+    if (!busy) onCancel();
   }}
   onclick={handleBackdropClick}
   onkeydown={handleKeydown}
 >
-  <h2 id={`${dialogId}-title`} class="section-title">{title ?? m.lesson_exit_title()}</h2>
+  <h2 id={`${dialogId}-title`} class="section-title" tabindex="-1" bind:this={heading}>
+    {title ?? m.lesson_exit_title()}
+  </h2>
   <p id={`${dialogId}-description`} class="dialog-text">
     {description ?? m.learn_exit_description()}
   </p>
 
   <div class="dialog-actions">
-    <button type="button" class="btn-primary" onclick={onCancel}
+    <button type="button" class="btn-primary" disabled={busy} onclick={onCancel}
       >{cancelLabel ?? m.lesson_resume()}</button
     >
-    {#if onSaveLeave}<button type="button" class="btn-ghost" onclick={onSaveLeave}
-        >{m.session_save_leave()}</button
+    {#if onSaveLeave}<button type="button" class="btn-ghost" disabled={busy} onclick={onSaveLeave}
+        >{saveLabel ?? m.session_save_leave()}</button
       >{/if}
-    <button type="button" class="btn-ghost" onclick={onConfirm}
+    <button type="button" class="btn-ghost" disabled={busy} onclick={onConfirm}
       >{confirmLabel ?? m.lesson_exit()}</button
     >
   </div>
@@ -114,11 +123,12 @@
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-overlay);
-    padding: var(--space-6);
+    padding: min(var(--space-6), 24px);
     margin: auto;
     max-width: 26rem;
-    width: calc(100% - 2 * var(--space-4));
-    max-height: calc(100dvh - 2 * var(--space-4));
+    width: calc(100% - 2 * min(var(--space-4), 16px));
+    max-height: calc(100dvh - 2 * min(var(--space-4), 16px));
+    container-type: inline-size;
     overflow: auto;
   }
 
@@ -152,5 +162,16 @@
   .dialog-actions button {
     flex: 1 1 auto;
     min-height: var(--answer-target-min);
+  }
+  @container (width < 16rem) {
+    .dialog-actions {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      justify-content: stretch;
+    }
+    .dialog-actions button {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
   }
 </style>

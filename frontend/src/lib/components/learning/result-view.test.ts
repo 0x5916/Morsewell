@@ -28,6 +28,11 @@ describe('result presentation', () => {
       reason: 'sessions'
     });
   });
+  it('rounds 5 out of 11 once, even with a previously rounded stored ratio', () => {
+    expect(resultView({ ...summary, correctAttempts: 5, accuracy: 0.455 }).accuracyPercent).toBe(
+      45
+    );
+  });
   it('keeps no evidence distinct from measured zero accuracy', () => {
     expect(
       resultView({

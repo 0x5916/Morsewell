@@ -1,5 +1,8 @@
 import type { RandomSource } from './exercise';
 export type PracticeContext = 'groups' | 'words' | 'callsigns' | 'contact';
+export function isPracticeContext(value: unknown): value is PracticeContext {
+  return value === 'groups' || value === 'words' || value === 'callsigns' || value === 'contact';
+}
 const words = [
   'RADIO',
   'SIGNAL',

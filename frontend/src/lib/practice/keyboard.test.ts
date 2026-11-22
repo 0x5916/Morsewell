@@ -40,10 +40,15 @@ describe('free practice keyboard policy', () => {
     }
   );
 
-  it('replays from the page and preserves spaces and Shift+Enter in the answer', () => {
+  it('preserves multiline editing and only scores from the transcription with an explicit shortcut', () => {
     expect(practiceKeyIntent(event(' '))).toBe('replay');
     expect(practiceKeyIntent(event(' ', {}, 'textarea'))).toBeNull();
-    expect(practiceKeyIntent(event('Enter', {}, 'textarea'))).toBe('check');
+    expect(practiceKeyIntent(event('Enter', {}, 'textarea'))).toBeNull();
+    expect(practiceKeyIntent(event('Enter', { ctrlKey: true }, 'textarea'))).toBe('check');
+    expect(practiceKeyIntent(event('Enter', { metaKey: true }, 'textarea'))).toBe('check');
+    expect(
+      practiceKeyIntent(event('Enter', { ctrlKey: true, isComposing: true }, 'textarea'))
+    ).toBeNull();
     expect(practiceKeyIntent(event('Enter', { shiftKey: true }, 'textarea'))).toBeNull();
     expect(practiceKeyIntent(event('Escape', {}, 'textarea'))).toBe('stop');
   });

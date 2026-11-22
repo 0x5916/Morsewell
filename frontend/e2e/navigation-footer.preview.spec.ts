@@ -14,6 +14,67 @@ test('the full footer uses the same type and row sizes on phone and desktop', as
   }
 });
 
+test('bottom destinations keep their full localized labels and clear the page at 200% text', async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  for (const locale of ['en', 'de', 'ja', 'zh-Hans', 'zh-Hant']) {
+    await page.goto(`/${locale}/morse/learn`);
+    await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+    const tabs = page.locator('.bottom-nav');
+    const links = tabs.getByRole('link');
+    await expect(links).toHaveCount(4);
+    const labels = await links.locator('.bottom-nav-label').evaluateAll((spans) =>
+      spans.map((span) => {
+        const range = document.createRange();
+        range.selectNodeContents(span);
+        const bounds = range.getBoundingClientRect();
+        const target = span.closest('a')!.getBoundingClientRect();
+        return {
+          lines: range.getClientRects().length,
+          fits: bounds.left >= target.left && bounds.right <= target.right,
+          height: target.height
+        };
+      })
+    );
+    for (const label of labels) {
+      expect(label.lines, locale).toBe(1);
+      expect(label.fits, locale).toBe(true);
+      expect(label.height, locale).toBeGreaterThanOrEqual(44);
+    }
+    const bar = await tabs.boundingBox();
+    const clearance = await page
+      .locator('#main-content')
+      .evaluate((main) => parseFloat(getComputedStyle(main).paddingBottom));
+    expect(clearance).toBeGreaterThanOrEqual(bar!.height);
+    await links.nth(2).click();
+    await expect(page).toHaveURL(new RegExp(`/${locale}/morse/progress$`));
+  }
+});
+
+test('desktop account and theme controls have separate hit targets at 200% text', async ({
+  page
+}) => {
+  await page.goto('/de/morse/progress');
+  await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+  const account = page.locator('.navbar-account button');
+  const accountIcon = account.locator('svg').first();
+  const theme = page.locator('.theme-icon-btn');
+  for (const width of [960, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    const [userBox, iconBox, themeBox] = await Promise.all(
+      [account, accountIcon, theme].map((control) => control.boundingBox())
+    );
+    if (!userBox || !iconBox || !themeBox) throw new Error('Missing header control');
+    expect(iconBox.x + iconBox.width).toBeLessThanOrEqual(userBox.x + userBox.width);
+    expect(userBox.x + userBox.width + 8).toBeLessThanOrEqual(themeBox.x);
+    await page.mouse.click(iconBox.x + iconBox.width / 2, iconBox.y + iconBox.height / 2);
+    await expect(account).toHaveAttribute('aria-expanded', 'true');
+    await page.keyboard.press('Escape');
+    await expect(account).toHaveAttribute('aria-expanded', 'false');
+  }
+});
+
 const internalRoutes = [
   '/login',
   '/register',

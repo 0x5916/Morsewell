@@ -64,6 +64,7 @@ export interface LearningSnapshot {
   coverage: 'complete' | 'local-only' | 'partial';
   knownCharacters: string[];
   hasProspectiveEvidence: boolean;
+  hasMixedCheckHistory: boolean;
   characters: LearningCharacter[];
   checks: EvaluatedCheck[];
   history: LearningHistoryEntry[];
@@ -498,6 +499,14 @@ export function projectLearningSnapshot(
     profileKey: scope,
     coverage,
     knownCharacters,
+    // Even a rejected plan or an earlier milestone rules out a first-use empty state.
+    hasMixedCheckHistory: sourceRecords.some(
+      (r) =>
+        (r.kind === 'plan' && r.purpose === 'mixed-check') ||
+        (r.kind === 'exposure-open' && r.source === 'mixed-check') ||
+        r.kind === 'milestone' ||
+        r.kind === 'milestone-correction'
+    ),
     hasProspectiveEvidence: records.some((r) => r.kind === 'plan') || claims.length > 0,
     characters,
     checks,
@@ -563,7 +572,10 @@ export async function loadLearningSnapshot(
  * same attained set; recorded exposure alone cannot supply screening evidence.
  */
 export function returnScreeningTargets(
-  snapshot: Pick<LearningSnapshot, 'characters' | 'knownCharacters'>,
+  snapshot: {
+    characters: readonly Pick<LearningCharacter, 'character' | 'proficiency' | 'lastAssessedAt'>[];
+    knownCharacters: readonly string[];
+  },
   requested: readonly string[] | null
 ): string[] | null {
   const known = new Set(snapshot.knownCharacters);

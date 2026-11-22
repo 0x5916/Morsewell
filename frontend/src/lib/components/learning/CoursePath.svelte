@@ -67,6 +67,7 @@
   {#if ready}
     <section class="path-browse" aria-labelledby="course-heading">
       <h2 id="course-heading">{m.lessons_course_heading()}</h2>
+      {#if unlockedStep > 1}<p>{m.learn_unlocked_revisit()}</p>{/if}
       {#if !expanded}{@render lessons(nearbyStart, nearbyStart + 2)}{/if}
       <details bind:open={expanded}>
         <summary>{m.lessons_browse_all({ count: LESSONS.length })}</summary>
