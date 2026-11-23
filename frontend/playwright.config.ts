@@ -34,18 +34,25 @@ export default defineConfig({
         ['firefox', devices['Desktop Firefox']],
         ['webkit', devices['Desktop Safari']]
       ] as const
-    ).flatMap(([id, device]) => [
-      {
-        name: `acceptance-${id}`,
-        testMatch: '**/*.acceptance.spec.ts',
-        use: { ...device, baseURL: 'http://127.0.0.1:4174' }
-      },
-      {
-        name: `preview-${id}`,
-        testMatch: ['**/*.offline.spec.ts', '**/*.preview.spec.ts'],
-        use: { ...device, baseURL: 'http://127.0.0.1:4177' }
-      }
-    ])
+    ).flatMap(([id, device]) => {
+      // Firefox hydration occasionally outlasts the default expectation window
+      // on loaded CI runners; the failed pages rendered moments after the cutoff.
+      const firefoxTiming = id === 'firefox' ? { expect: { timeout: 15_000 } } : {};
+      return [
+        {
+          name: `acceptance-${id}`,
+          testMatch: '**/*.acceptance.spec.ts',
+          use: { ...device, baseURL: 'http://127.0.0.1:4174' },
+          ...firefoxTiming
+        },
+        {
+          name: `preview-${id}`,
+          testMatch: ['**/*.offline.spec.ts', '**/*.preview.spec.ts'],
+          use: { ...device, baseURL: 'http://127.0.0.1:4177' },
+          ...firefoxTiming
+        }
+      ];
+    })
   ],
   webServer: [acceptance, preview]
 });
