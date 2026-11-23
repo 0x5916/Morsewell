@@ -26,25 +26,28 @@ export async function resetToHome(page: Page, scenario: Scenario = 'New learner 
   await resetAcceptance(page, scenario, /\/en$/);
 }
 
-export async function readCopyCheckpoint(page: Page, database = EVIDENCE_DB) {
-  return page.evaluate(async (name) => {
-    if (!(await indexedDB.databases()).some((db) => db.name === name)) return null;
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open(name);
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-    try {
-      return await new Promise<unknown>((resolve, reject) => {
-        const tx = db.transaction('meta', 'readonly');
-        const request = tx.objectStore('meta').get(['unclaimed', 'checkpoint:copy']);
-        request.onsuccess = () => resolve(request.result?.value ?? null);
+export async function readCopyCheckpoint(page: Page, database = EVIDENCE_DB, owner = 'unclaimed') {
+  return page.evaluate(
+    async ({ name, owner }) => {
+      if (!(await indexedDB.databases()).some((db) => db.name === name)) return null;
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open(name);
+        request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
-    } finally {
-      db.close();
-    }
-  }, database);
+      try {
+        return await new Promise<unknown>((resolve, reject) => {
+          const tx = db.transaction('meta', 'readonly');
+          const request = tx.objectStore('meta').get([owner, 'checkpoint:copy']);
+          request.onsuccess = () => resolve(request.result?.value ?? null);
+          request.onerror = () => reject(request.error);
+        });
+      } finally {
+        db.close();
+      }
+    },
+    { name: database, owner }
+  );
 }
 
 export async function readGuidedCheckpoint(page: Page, database = EVIDENCE_DB) {
@@ -131,7 +134,7 @@ export async function readSessionCount(page: Page) {
 }
 
 export async function startAndType(page: Page, text = 'KM') {
-  await page.getByRole('button', { name: 'Start practice' }).click();
+  await page.getByRole('button', { name: 'Play passage' }).click();
   const answer = page.getByRole('textbox', { name: 'Your copy' });
   await answer.fill(text);
   return answer;

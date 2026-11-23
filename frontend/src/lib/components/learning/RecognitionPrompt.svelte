@@ -4,8 +4,10 @@
   import { acceptsSessionShortcut } from './keyboard';
   import CharacterGrid from './CharacterGrid.svelte';
   import AnswerInput from './AnswerInput.svelte';
-  import type { AttemptClassification, InputMode } from '../../training/v2/types';
+  import type { InputMode } from '../../training/v2/types';
   import * as m from '#lib/paraglide/messages.js';
+  import { MORSE } from '../../training/sequence';
+  import { getLocale } from '#lib/paraglide/runtime.js';
 
   interface Props {
     phase: GuidedSessionPhase;
@@ -14,8 +16,12 @@
     coaching?: boolean;
     assessment?: boolean;
     firstRecall?: boolean;
+    introduceFormat?: boolean;
+    canPlayNextSound?: boolean;
+    replayed?: boolean;
     draft?: string;
-    classification?: AttemptClassification;
+    restoredUnscored?: boolean;
+    latencyMs?: number;
     options: string[];
     expected: string;
     entered?: string;
@@ -37,8 +43,12 @@
     coaching = false,
     assessment = false,
     firstRecall = false,
+    introduceFormat = false,
+    canPlayNextSound = false,
+    replayed = false,
     draft = $bindable(''),
-    classification,
+    restoredUnscored = false,
+    latencyMs,
     options,
     expected,
     entered = '',
@@ -55,6 +65,7 @@
   let feedback = $derived(phase === 'feedback');
   let playing = $derived(phase === 'playing');
   let canPlay = $derived(phase === 'ready' || phase === 'answering');
+  const promptId = $props.id();
   function focusHeading(heading: HTMLElement) {
     heading.focus();
   }
@@ -80,7 +91,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<section class="recognition" class:assessment>
+<section class="recognition" class:assessment class:feedback>
   {#if feedback}
     <header>
       <h1 tabindex="-1" class:correct={isCorrect} {@attach focusHeading}>
@@ -90,22 +101,18 @@
           ? m.lesson_warmup_correct({ character: expected })
           : m.lesson_warmup_expected({ character: expected })}
       </h1>
-      {#if !isCorrect}<p>
-          {typed
-            ? m.lesson_recall_compare({ text: entered })
-            : m.lesson_warmup_compare({ character: entered })}
-        </p>{/if}
     </header>
-    <div class="sounds" class:single={isCorrect}>
+    <div class="sounds">
       {#each isCorrect ? [expected] : [entered, expected] as character (character)}
-        <div class="sound">
-          <p>
-            {character === expected ? m.lesson_feedback_expected() : m.lesson_feedback_entered()}
-          </p>
-          <span class="character" aria-hidden="true">{character}</span>
+        {@const correctSound = character === expected}
+        {@const label = correctSound
+          ? m.lesson_feedback_expected({ character })
+          : m.lesson_feedback_entered({ character })}
+        {#if character && [...character].every((symbol) => Object.hasOwn(MORSE, symbol))}
           <button
             type="button"
             class="btn-ghost"
+            aria-describedby={isCorrect ? undefined : `${promptId}-hear-sound`}
             aria-disabled={playingCharacter === character}
             aria-busy={playingCharacter === character}
             onclick={() => {
@@ -113,78 +120,116 @@
             }}
           >
             <Volume2 size={20} aria-hidden="true" />
-            {playingCharacter === character
-              ? m.lesson_playing_character({ character })
-              : m.lesson_hear_character({ character })}
+            <span>
+              {playingCharacter === character
+                ? m.lesson_playing_character({ character })
+                : isCorrect
+                  ? m.lesson_hear_character({ character })
+                  : label}
+            </span>
           </button>
-        </div>
+        {:else}<span class="unplayable">{label}</span>{/if}
       {/each}
+      {#if !isCorrect}<span hidden id={`${promptId}-hear-sound`}>{m.lesson_play_sound()}</span>{/if}
     </div>
-    {#if !scored || isCorrect}<p class="reassurance">
-        {#if !scored}{coaching ? m.review_unmeasured() : m.lesson_warmup_unscored()}
-        {:else if isCorrect && classification === 'automatic'}{m.lesson_feedback_automatic()}
-        {:else}{m.lesson_feedback_developing()}{/if}
+    {#if restoredUnscored}<p class="reassurance">{m.lesson_restored_unscored()}</p>
+    {:else if scored && isCorrect && latencyMs !== undefined}<p class="reassurance">
+        {m.lesson_answer_time({
+          seconds: (latencyMs / 1000).toLocaleString(getLocale(), { maximumFractionDigits: 2 })
+        })}
       </p>{/if}
     <footer>
       <button type="button" class="btn-primary" aria-keyshortcuts="Enter" onclick={onContinue}>
-        {m.lesson_continue()}
+        {canPlayNextSound ? m.lesson_play_next_sound() : m.lesson_continue()}
       </button>
     </footer>
   {:else}
-    <header>
-      <h1 tabindex="-1" {@attach focusHeading}>
-        {phase !== 'answering'
-          ? m.check_listen()
-          : firstRecall
-            ? m.lesson_recall_start()
-            : m.lesson_prompt_question()}
+    {#if playing}
+      <h1 class="playback-state">
+        <Volume2 size={24} aria-hidden="true" />{assessment
+          ? m.check_playing()
+          : m.lesson_listening()}
       </h1>
-      {#if firstRecall}<p>{m.lesson_recall_scored()}</p>{/if}
-    </header>
-    {#if !assessment || !playing}<button
-        type="button"
-        class={assessment ? 'btn-ghost' : phase === 'ready' ? 'btn-primary' : 'btn-ghost'}
-        aria-disabled={!canPlay}
-        aria-live={assessment ? undefined : 'polite'}
-        aria-keyshortcuts={canPlay ? 'Space' : undefined}
-        onclick={play}
-      >
-        {#if playing}<Volume2 size={20} aria-hidden="true" /> {m.lesson_listening()}
-        {:else if phase === 'answering'}{#if !assessment}<RotateCcw
+    {:else}
+      <header>
+        <h1
+          tabindex="-1"
+          {@attach (heading) => {
+            if (phase !== 'answering' || !typed) focusHeading(heading);
+          }}
+        >
+          {phase === 'answering'
+            ? m.lesson_prompt_question()
+            : typed &&
+                !assessment &&
+                !coaching &&
+                expected.length > 1 &&
+                (!introduceFormat || restoredUnscored)
+              ? m.lesson_listen_group({ count: expected.length })
+              : m.check_listen()}
+        </h1>
+        {#if phase === 'ready' && introduceFormat && !coaching && !assessment && !restoredUnscored}
+          <p>
+            {typed
+              ? expected.length > 1
+                ? m.lesson_group_scored({ count: expected.length })
+                : firstRecall && scored
+                  ? m.lesson_recall_scored()
+                  : m.lesson_prepare_single()
+              : scored
+                ? m.lesson_choice_scored()
+                : m.lesson_warmup_hint()}
+          </p>
+        {/if}
+      </header>
+    {/if}
+    {#if phase === 'answering'}
+      {#if typed}
+        <AnswerInput
+          bind:value={draft}
+          expectedLength={expected.length}
+          {onSubmit}
+          onReplay={play}
+        />
+      {:else}
+        <CharacterGrid {options} large {onSelect} />
+      {/if}
+    {/if}
+    {#if canPlay}
+      <div class="play-controls">
+        <button
+          type="button"
+          class={phase === 'ready' ? 'btn-primary' : 'btn-ghost'}
+          aria-describedby={phase === 'answering' && (assessment || scored)
+            ? `${promptId}-replay`
+            : undefined}
+          aria-keyshortcuts="Space"
+          onclick={play}
+        >
+          {#if phase === 'answering'}<RotateCcw
               size={20}
               aria-hidden="true"
-            />{/if}
-          {m.lesson_replay_sound()}
-        {:else}{#if !assessment}<Play size={20} aria-hidden="true" />{/if}
-          {m.lesson_play_sound()}{/if}
-      </button>{:else}<p class="playback-state" role="status">{m.check_playing()}</p>{/if}
-    {#if assessment && playing}<p class="playback-cue">{m.check_answer_after_sound()}</p>{/if}
-    {#if typed && (!assessment || phase === 'answering')}
-      <AnswerInput
-        instruction={assessment ? m.check_type_character() : undefined}
-        bind:value={draft}
-        expectedLength={expected.length}
-        disabled={phase !== 'answering'}
-        {onSubmit}
-        onReplay={play}
-      />
-    {:else if !typed}
-      <CharacterGrid {options} large disabled={phase !== 'answering'} {onSelect} />
+            />{m.lesson_replay_sound()}
+          {:else}<Play size={20} aria-hidden="true" />{m.lesson_play_sound()}{/if}
+          <kbd aria-hidden="true">{m.lesson_key_space()}</kbd>
+        </button>
+        {#if phase === 'answering' && assessment}
+          <p class="reassurance" id={`${promptId}-replay`}>
+            {replayed ? m.check_credit_used() : m.check_replay_cost()}
+          </p>
+        {:else if phase === 'answering' && scored}
+          <p class={firstRecall ? 'reassurance' : 'sr-only'} id={`${promptId}-replay`}>
+            {m.lesson_replay_timing()}
+          </p>
+        {/if}
+      </div>
     {/if}
-    {#if audioError && !assessment}<p class="notice" role="alert">
-        {m.lesson_feedback_audio_error()}
-      </p>{/if}
-    {#if canPlay && !scored && !coaching && !assessment}
-      <p class="reassurance">{m.lesson_warmup_hint()}</p>
+    {#if !typed && phase !== 'answering'}
+      <CharacterGrid {options} large disabled {onSelect} />
     {/if}
-    {#if assessment && phase === 'ready'}<p>
-        {audioError ? m.lesson_feedback_audio_error() : m.check_audio_tap()}
-      </p>{/if}
-    {#if !assessment && canPlay}<footer class="keyboard-hint">
-        <p>{phase === 'answering' ? m.lesson_hint_replay() : m.lesson_hint_play()}</p>
-      </footer>{:else if phase === 'answering'}<p class="keyboard-hint">
-        {m.check_space_replay()}
-      </p>{/if}
+    {#if canPlay && restoredUnscored}<p class="reassurance">{m.lesson_restored_unscored()}</p>{/if}
+    {#if audioError}<p class="notice" role="alert">{m.lesson_feedback_audio_error()}</p>
+    {:else if assessment && phase === 'ready'}<p>{m.check_audio_tap()}</p>{/if}
   {/if}
 </section>
 
@@ -198,8 +243,12 @@
     gap: var(--space-6);
     padding-block: var(--space-4);
   }
+  .recognition.feedback {
+    gap: min(var(--space-6), 24px);
+    padding-block: min(var(--space-4), 16px);
+  }
   header {
-    min-height: 6rem;
+    min-height: 0;
   }
   h1 {
     display: flex;
@@ -211,14 +260,14 @@
     font-weight: 600;
     line-height: var(--leading-tight);
   }
-  h1 :global(svg) {
+  header h1 :global(svg) {
     flex-shrink: 0;
     color: var(--status-bad);
   }
   h1:focus {
     outline: none;
   }
-  h1.correct :global(svg) {
+  header h1.correct :global(svg) {
     color: var(--status-good);
   }
   p {
@@ -230,29 +279,37 @@
   }
   .sounds {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-4);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+    gap: min(var(--space-4), 16px);
   }
-  .sounds.single {
-    grid-template-columns: minmax(0, 1fr);
+  .sounds button {
+    padding: min(var(--space-3), 12px);
+    gap: min(var(--space-2), 8px);
   }
-  .sound {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-4);
+  .sounds button span {
+    text-wrap: balance;
   }
-  .sound p {
-    font-size: var(--text-sm);
+  .unplayable {
+    align-self: center;
+    overflow-wrap: anywhere;
   }
-  .character {
-    font-family: var(--font-mono);
-    font-size: 3.5rem;
-    line-height: 1.2;
-    font-weight: 600;
+  .play-controls {
+    display: grid;
+    gap: var(--space-2);
+  }
+  kbd {
+    font: inherit;
+    font-size: var(--text-xs);
+    opacity: 0.8;
+  }
+  button :global(svg) {
+    flex-shrink: 0;
   }
   button {
     width: 100%;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
     min-height: 3.5rem;
     gap: var(--space-2);
     padding: var(--space-3);
@@ -268,14 +325,9 @@
   .notice {
     color: var(--status-bad);
   }
-  .reassurance,
-  footer p {
+  .reassurance {
     font-size: var(--text-sm);
     color: var(--text-muted);
-  }
-  footer {
-    margin-top: auto;
-    padding-top: var(--space-6);
   }
   .assessment {
     min-height: auto;
@@ -289,27 +341,13 @@
   .assessment .playback-state {
     margin-top: var(--space-4);
   }
-  .assessment .playback-cue {
-    margin-top: var(--space-4);
-    font-size: var(--text-sm);
-  }
   .assessment button {
     min-height: calc(var(--answer-target-min) + var(--space-1));
-    color: var(--accent);
     font-weight: 600;
     border-color: var(--border);
   }
-  .assessment :global(.answer-input-container) {
-    gap: var(--space-6);
-  }
-  .assessment :global(.input-instruction) {
-    font-size: var(--text-sm);
-  }
-  .keyboard-hint {
-    font-size: var(--text-sm);
-  }
   @media (any-pointer: coarse) {
-    .keyboard-hint {
+    kbd {
       display: none;
     }
   }

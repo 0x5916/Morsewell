@@ -124,6 +124,11 @@ export function createPlaybackController(ports: PlaybackPorts) {
   return {
     play,
     stop,
+    setVolume(volume: number) {
+      if (disposed || !state.plan) return;
+      engine.setVolume?.(volume);
+      publish({ ...state, plan: { ...state.plan, volume } });
+    },
     replaceText(text: string) {
       if (disposed || state.text === text) return;
       if (state.started) void stop();

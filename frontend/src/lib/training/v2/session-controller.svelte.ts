@@ -17,6 +17,7 @@ import { SvelteDate } from 'svelte/reactivity';
 import { buildAudioPlan } from '../timing';
 import type { AttemptRepository } from '../../data/attempt-repository';
 import type { SessionRepository } from '../../data/session-repository';
+import { evaluateProgression, sessionProgressionFields } from './progression';
 import { scorePromptAttempt } from './attempt';
 import {
   createGuidedSession,
@@ -68,6 +69,7 @@ export class GuidedSessionController {
   #draft = '';
   #restored = false;
   #clock: () => number;
+  #pausedAnswerAt: number | null = null;
   #nowIso: () => string;
   #audioEngine: AudioEngine;
   #attemptRepo: AttemptRepository;
@@ -146,12 +148,19 @@ export class GuidedSessionController {
       this.#restored = true;
       this.restoring = true;
       if (saved.phase !== 'feedback') {
-        const interrupted = ['playing', 'answering', 'paused'].includes(saved.phase);
+        // V1 checkpoints predate promptStarted. A clean pause from ready is safe;
+        // a failed first play also returns to ready, with its audio error retained.
+        const phaseBeforePause = saved.phase === 'paused' ? saved.pausedFromPhase : saved.phase;
+        saved.promptStarted ??=
+          !['ready', 'introducing', 'idle'].includes(phaseBeforePause ?? '') ||
+          saved.answerReadyAtMs != null ||
+          saved.replayCount > 0 ||
+          saved.audioError != null;
         saved.phase = 'paused';
         saved.pausedFromPhase =
           saved.currentPrompt?.spec.kind === 'introduction' ? 'introducing' : 'ready';
         saved.answerReadyAtMs = null;
-        if (interrupted) {
+        if (saved.promptStarted) {
           saved.replayCount = Math.max(1, saved.replayCount);
           if (saved.currentPrompt)
             saved.currentPrompt = {
@@ -207,6 +216,22 @@ export class GuidedSessionController {
 
   get replayCount() {
     return this.state.replayCount;
+  }
+
+  /** A correct answer can lead straight into another guided prompt of the same format. */
+  get canPlayNextSound() {
+    const current = this.currentPrompt;
+    const next = this.state.prompts[this.currentPromptIndex + 1];
+    return Boolean(
+      this.#allowProgression &&
+      this.phase === 'feedback' &&
+      this.lastAttempt?.isCorrect &&
+      current &&
+      next &&
+      current.spec.kind === next.spec.kind &&
+      current.isScored === next.isScored &&
+      current.spec.expectedText.length === next.spec.expectedText.length
+    );
   }
 
   /**
@@ -275,14 +300,27 @@ export class GuidedSessionController {
         case 'session-complete': {
           const { sessionId, completedAt } = effect.summary;
           const completedPromptCount = this.state.prompts.length;
-          this.#enqueuePersistence(() =>
-            this.#sessionRepo.updateSessionProgress(
+          this.#enqueuePersistence(async () => {
+            if (this.#allowProgression) {
+              const nowIso = this.#nowIso();
+              // This read follows queued answer writes and includes completions or sync in other tabs.
+              const history = await this.#attemptRepo.getAttemptsByTimeRange(
+                '0001-01-01T00:00:00.000Z',
+                nowIso
+              );
+              const decision = evaluateProgression(this.state.step, this.state.attempts, history, {
+                nowIso,
+                policy: this.#masteryPolicy
+              });
+              this.state.summary = { ...effect.summary, ...sessionProgressionFields(decision) };
+            }
+            await this.#sessionRepo.updateSessionProgress(
               sessionId,
               completedPromptCount,
               'completed',
               completedAt
-            )
-          );
+            );
+          });
           break;
         }
         case 'session-abandoned': {
@@ -501,9 +539,13 @@ export class GuidedSessionController {
 
   pause(): void {
     this.#stopFeedback();
-    if (this.#audioEngine.isActive() && !this.#audioEngine.isPaused()) {
+    if (this.#deferredFeedback && this.phase === 'playing') {
+      // Cancel even a sound waiting for its evidence write or AudioContext to unlock.
+      void this.#audioEngine.stop({ notify: false });
+    } else if (this.#audioEngine.isActive() && !this.#audioEngine.isPaused()) {
       void this.#audioEngine.pause();
     }
+    if (this.phase === 'answering') this.#pausedAnswerAt = this.#clock();
     this.#dispatch({ type: 'pause' });
   }
 
@@ -514,7 +556,10 @@ export class GuidedSessionController {
     } else if (this.#audioEngine.isPaused()) {
       void this.#audioEngine.resume();
     }
-    this.#dispatch({ type: 'resume' });
+    const pausedForMs =
+      this.#pausedAnswerAt === null ? 0 : Math.max(0, this.#clock() - this.#pausedAnswerAt);
+    this.#pausedAnswerAt = null;
+    this.#dispatch({ type: 'resume', pausedForMs });
   }
 
   abandon(): void {

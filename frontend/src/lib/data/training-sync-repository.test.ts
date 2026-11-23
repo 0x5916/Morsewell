@@ -221,6 +221,80 @@ describe('Owner-scoped training persistence', () => {
     ).rejects.toThrow('cursor changed');
     expect(await sync.getCursor()).toBe('checkpoint');
   });
+
+  it('keeps passage type on its original device through sync, retry and guest import', async () => {
+    const words: TrainingSessionRecord = {
+      ...session,
+      mode: 'practice',
+      practiceContext: 'words',
+      status: 'completed',
+      completedAt: '2026-10-20T00:03:00.000Z',
+      promptCount: 1,
+      completedPromptCount: 1,
+      accuracy: 1
+    };
+    const local = createSessionRepository(db, account);
+    const sync = createTrainingSyncRepository(db, account);
+    const progressing = { ...words, status: 'in-progress' as const, completedAt: undefined };
+    await local.saveSession(progressing);
+    await local.saveSession(progressing);
+    await expect(local.saveSession({ ...session, mode: 'guided' })).rejects.toThrow(
+      'Immutable session conflict'
+    );
+    expect(await sync.countPending()).toBe(0);
+    await local.saveSession(words);
+    const queue = await sync.getPending();
+    expect(queue[0].payload).not.toHaveProperty('practiceContext');
+    await sync.acknowledge(queue);
+    await local.saveSession(words);
+    const repeated = await sync.getPending();
+    expect(repeated).toHaveLength(1);
+    await sync.acknowledge(repeated);
+    await expect(local.saveSession(progressing)).rejects.toThrow('Immutable session conflict');
+    await expect(local.saveSession({ ...words, practiceContext: 'contact' })).rejects.toThrow(
+      'Immutable session conflict'
+    );
+    const { practiceContext: _deviceOnly, ...downloaded } = words;
+    void _deviceOnly;
+    const page = {
+      sessions: [{ ...downloaded, sourceKind: 'native' as const, eventIds: [] }],
+      attempts: [],
+      expectedCursor: null,
+      nextCursor: 'next'
+    };
+    await sync.applyDownloadPage(page);
+    expect((await local.getSession(words.id))?.practiceContext).toBe('words');
+    await local.saveSession(words);
+    expect(await sync.getPending()).toHaveLength(0);
+    await expect(local.saveSession({ ...words, accuracy: 0 })).rejects.toThrow(
+      'Immutable session conflict'
+    );
+
+    const remote = createTrainingSyncRepository(db, other);
+    await remote.applyDownloadPage(page);
+    const elsewhere = createSessionRepository(db, other);
+    expect(await elsewhere.getSession(words.id)).not.toHaveProperty('practiceContext');
+    await createSessionRepository(db).saveSession(words);
+    await remote.importUnclaimed(await getTrainingInstallationId(db));
+    expect((await elsewhere.getSession(words.id))?.practiceContext).toBe('words');
+    expect(await remote.getPending()).toHaveLength(0);
+
+    await createSessionRepository(db).saveSession({ ...words, id: 'conflict' });
+    await local.saveSession({ ...words, id: 'conflict', practiceContext: 'contact' });
+    await expect(sync.importUnclaimed(await getTrainingInstallationId(db))).rejects.toThrow(
+      'Device history ID conflict'
+    );
+    expect((await local.getSession('conflict'))?.practiceContext).toBe('contact');
+
+    await sync.applyDownloadPage({
+      ...page,
+      sessions: [{ ...downloaded, accuracy: 0.75, sourceKind: 'native', eventIds: [] }],
+      expectedCursor: 'next',
+      nextCursor: 'changed'
+    });
+    expect(await local.getSession(words.id)).toMatchObject({ accuracy: 0.75 });
+    expect(await local.getSession(words.id)).not.toHaveProperty('practiceContext');
+  });
   it('rolls back partial downloads and the cursor on interruption, then replays safely', async () => {
     const sync = createTrainingSyncRepository(db, account);
     await expect(

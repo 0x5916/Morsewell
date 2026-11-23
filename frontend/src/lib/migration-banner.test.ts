@@ -63,19 +63,19 @@ describe('migration banner state', () => {
     });
   });
 
-  it('warns guests with browser-local history', () => {
+  it('keeps ordinary guest training informational', () => {
     expect(resolveMigrationBanner(input({ hasHistory: true }))).toMatchObject({
       kind: 'guest-history',
-      critical: true,
-      tone: 'warning'
+      critical: false,
+      tone: 'info'
     });
   });
 
-  it('warns guests with saved unfinished sessions even without completed history', () => {
+  it('keeps checkpoint import help available without raising an alert', () => {
     expect(resolveMigrationBanner(input({ hasCheckpoints: true }))).toMatchObject({
       kind: 'guest-history',
       showCheckpoint: true,
-      critical: true
+      critical: false
     });
   });
 

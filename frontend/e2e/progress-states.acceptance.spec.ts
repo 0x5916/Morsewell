@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { EVIDENCE_DB, resetToHome, startAndType } from './helpers';
+import { EVIDENCE_DB, resetAcceptance, resetToHome, startAndType } from './helpers';
 
 const characters = '/en/morse/progress?view=characters&status=met';
 
@@ -21,7 +21,7 @@ test('listening to practice without submitting records exposure without a guided
 }) => {
   await resetToHome(page);
   await page.goto('/en/morse/practice');
-  await page.getByRole('button', { name: 'Start practice' }).click();
+  await page.getByRole('button', { name: 'Play passage' }).click();
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
   await page.goto(characters);
   await expect(
@@ -37,7 +37,7 @@ test('a saved free-practice session appears in activity and history without a gu
   await resetToHome(page);
   await page.goto('/en/morse/practice');
   const answer = await startAndType(page);
-  await answer.press('Enter');
+  await answer.press('Control+Enter');
   await expect(page.getByText('Practice result saved on this device')).toBeVisible();
   await page.goto('/en/morse/progress');
   const activity = page.getByRole('region', { name: 'Recent activity summary' });
@@ -49,7 +49,32 @@ test('a saved free-practice session appears in activity and history without a gu
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Show all characters' })).toHaveCount(0);
   await page.getByRole('link', { name: 'View practice history' }).click();
-  await expect(page.getByText('Practice: Lesson 1', { exact: true })).toBeVisible();
+  await expect(page.getByText('Random groups through Lesson 1', { exact: true })).toBeVisible();
+});
+
+test('a learner with guided records and no mixed checks gets one path to character details', async ({
+  page
+}) => {
+  await resetToHome(page, 'Returning learner / populated history');
+  await page.goto('/en/morse/progress');
+  await expect(page.getByText('No first-listen checks recorded yet.')).toBeVisible();
+  await expect(page.getByRole('link', { name: /Below target/ })).toHaveCount(0);
+  await page.getByRole('link', { name: 'View characters', exact: true }).click();
+  await expect(page).toHaveURL(/view=characters/);
+  await expect(page.getByRole('heading', { name: 'Character records' })).toBeVisible();
+});
+
+test('account history still syncing does not claim a first-use check state', async ({ page }) => {
+  await resetAcceptance(page, 'Synthetic account / pending sync', /\/en\/settings$/);
+  await page.goto('/en/morse/progress');
+  await expect(page.getByRole('heading', { name: 'Progress', exact: true })).toBeVisible();
+  await expect(
+    page
+      .locator('.progress-subtitle')
+      .filter({ hasText: /sync|history/i })
+      .first()
+  ).toBeVisible();
+  await expect(page.getByText('No first-listen checks recorded yet.')).toHaveCount(0);
 });
 
 test('an empty status filter resets to all recorded characters and returns keyboard focus', async ({

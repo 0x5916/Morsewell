@@ -27,6 +27,7 @@
   import { createAttemptRepository } from '#lib/data/attempt-repository.ts';
   import { createSessionRepository } from '#lib/data/session-repository.ts';
   import {
+    historyWithAnswerAccuracy,
     sessionOccurredAt,
     summarizeProgress,
     type ProgressSummary
@@ -39,7 +40,13 @@
   import PracticeActivity from '#lib/components/progress/PracticeActivity.svelte';
   import * as m from '#lib/paraglide/messages.js';
   import { recordedCharacters } from '#lib/training/targeted-review.ts';
-  import { criterionLabel } from '#lib/components/learning/recommendation-copy.ts';
+  import { listCheckpoints, type SessionCheckpoint } from '#lib/data/session-checkpoints.ts';
+  import {
+    confusionSummary,
+    isOptionalCheck,
+    guidedRepeatPair,
+    savedSessionAction
+  } from '#lib/components/learning/recommendation-copy.ts';
   import { loadLearningPilotHistory, type LearningPilotHistory } from '#lib/data/learning-pilot.ts';
 
   const TABS = [
@@ -54,11 +61,17 @@
   let summary = $state.raw<ProgressSummary | null>(null);
   let history = $state.raw<HistorySessionRecord[]>([]);
   let knownCharacters = $state.raw<string[]>([]);
+  let savedSession = $state.raw<SessionCheckpoint | null>(null);
+  const resumeAction = $derived(savedSession ? savedSessionAction(savedSession) : null);
+  const optionalCheck = $derived(
+    learning.snapshot && isOptionalCheck(learning.snapshot.recommendation.primary)
+  );
   let guidedUnlockedStep = $state(1);
   let reviewHistory = $state.raw<LearningPilotHistory[]>([]);
   let reviewHistoryError = $state(false);
   const hasActivity = $derived(
-    summary?.hasRecentActivity ||
+    savedSession ||
+      summary?.hasRecentActivity ||
       history.length > 0 ||
       reviewHistory.length > 0 ||
       learning.snapshot?.knownCharacters.length ||
@@ -72,6 +85,11 @@
     learning.snapshot?.characters.filter(
       (c) => c.hasGuidedRecord || pilotCharacters.includes(c.character)
     ) ?? []
+  );
+  const featuredPair = $derived(
+    optionalCheck && !resumeAction && characterRecords.length && summary
+      ? guidedRepeatPair(summary.confusionPairs, guidedUnlockedStep)
+      : undefined
   );
   let mounted = false;
   let loadVersion = 0;
@@ -89,6 +107,7 @@
       history = [];
       knownCharacters = [];
       guidedUnlockedStep = 1;
+      savedSession = null;
       reviewHistory = [];
       showHistory = false;
       loading = true;
@@ -103,15 +122,20 @@
       const nowIso = new Date(now).toISOString();
       const repository = createSessionRepository(db, owner);
       const attemptRepository = createAttemptRepository(db, owner);
-      const [attempts, sessions] = await Promise.all([
+      const [attempts, sessions, checkpoints] = await Promise.all([
         attemptRepository.getAttemptsByTimeRange('0001-01-01T00:00:00.000Z', nowIso),
-        repository.getSessions()
+        repository.getSessions(),
+        listCheckpoints(owner)
       ]);
       if (!current()) return;
+      savedSession = checkpoints[0] ?? null;
       knownCharacters = recordedCharacters(attempts);
       guidedUnlockedStep = deriveGuidedLessonAccess(attempts, nowIso).unlockedStep;
       summary = summarizeProgress(attempts, sessions, nowIso);
-      history = sessions.filter((session) => session.status !== 'in-progress').slice(0, 20);
+      history = historyWithAnswerAccuracy(
+        sessions.filter((session) => session.status !== 'in-progress').slice(0, 20),
+        attempts
+      );
       loadedOwner = owner;
       try {
         const reviews = await loadLearningPilotHistory(owner);
@@ -218,25 +242,12 @@
           >
         </section>
       {:else}
-        {#if characterRecords.length && (view === 'characters' || (view === 'overview' && learning.snapshot.knownCharacters.length >= 2))}
-          <LearningOverview
-            snapshot={learning.snapshot}
-            {characterRecords}
-            unlockedLesson={guidedUnlockedStep}
-            details
-            progressView={view}
-          />
+        {#if view === 'overview' && resumeAction}
+          <div class="guided-next">
+            {#if resumeAction.hint}<p>{resumeAction.hint}</p>{/if}
+            <a class="btn-primary" href={localizedHref(resumeAction.path)}>{resumeAction.title}</a>
+          </div>
         {/if}
-        {#if view === 'overview' && !learning.snapshot?.checks.length && (summary.confusionPairs.length > 0 || summary.slowChars.length > 0)}
-          <section class="progress-section" aria-label={m.progress_attention()}>
-            <ConfusionList
-              confusionPairs={summary.confusionPairs}
-              slowChars={summary.slowChars}
-              {knownCharacters}
-            />
-          </section>
-        {/if}
-
         {#if view === 'overview'}<PracticeActivity
             progressPage
             sessionCount={summary.sessionCount}
@@ -246,6 +257,37 @@
             totalMinutes={summary.totalMinutes}
             timedSessionCount={summary.timedSessionCount}
             accuracyPercent={summary.accuracyPercent}
+          />
+        {/if}
+        {#if view === 'overview' && !resumeAction && optionalCheck && characterRecords.length}
+          <div class="guided-next">
+            {#if featuredPair}<p>{confusionSummary(featuredPair)}</p>{/if}
+            <a
+              class="btn-primary"
+              href={localizedHref('/morse/learn/session?step=' + guidedUnlockedStep)}
+              >{m.learn_start_action({ step: guidedUnlockedStep })}</a
+            >
+          </div>
+        {/if}
+        {#if view === 'overview' && !learning.snapshot?.checks.length && (summary.confusionPairs.length > 0 || summary.slowChars.length > 0)}
+          <section class="progress-section" aria-label={m.progress_attention()}>
+            <ConfusionList
+              confusionPairs={summary.confusionPairs}
+              slowChars={summary.slowChars}
+              {knownCharacters}
+              {featuredPair}
+            />
+          </section>
+        {/if}
+
+        {#if characterRecords.length && (view === 'characters' || (view === 'overview' && learning.snapshot.knownCharacters.length >= 2))}
+          <LearningOverview
+            snapshot={learning.snapshot}
+            {characterRecords}
+            unlockedLesson={guidedUnlockedStep}
+            secondary={Boolean(resumeAction || optionalCheck)}
+            details
+            progressView={view}
           />
         {/if}
         {#if view !== 'history' && characterRecords.length === 0}
@@ -262,26 +304,43 @@
                 >{m.progress_view_practice_history()}</a
               >
             {/if}
-            <a class="btn-primary" href={localizedHref('/morse/learn')}
+            <a class={resumeAction ? 'link' : 'btn-primary'} href={localizedHref('/morse/learn')}
               >{m.progress_return_course()}</a
             >
           </section>
         {/if}
         {#if view === 'overview' && characterRecords.length}
-          <section class="recall-summary" aria-label={m.progress_tab_characters()}>
-            {#each ['not-met', 'met', 'stale'] as criterion (criterion)}
-              <a href={localizedHref(`/morse/progress?view=characters&status=${criterion}`)}>
-                <span>{criterionLabel(criterion)}</span>
-                <strong
-                  >{characterRecords.filter((c) =>
-                    criterion === 'stale'
-                      ? !['met', 'not-met'].includes(c.current.criterion)
-                      : c.current.criterion === criterion
-                  ).length}</strong
-                >
-              </a>
-            {/each}
-          </section>
+          {#if !learning.snapshot.hasMixedCheckHistory}
+            <section class="check-summary" aria-label={m.progress_tab_characters()}>
+              {#if learning.snapshot.coverage !== 'partial'}<p>{m.progress_no_checks_yet()}</p>{/if}
+              <a
+                class="link standalone-target"
+                href={localizedHref('/morse/progress?view=characters')}
+                >{m.progress_view_characters()}</a
+              >
+            </section>
+          {:else}
+            <section class="check-summary" aria-labelledby="check-summary-title">
+              <h2 id="check-summary-title" class="section-title">{m.progress_latest_check()}</h2>
+              <div class="recall-summary">
+                {#each [['not-met', m.progress_below_target()], ['met', m.progress_passed()], ['stale', m.progress_no_current_result()]] as [criterion, label] (criterion)}
+                  <a
+                    aria-describedby="check-summary-title"
+                    href={localizedHref(`/morse/progress?view=characters&status=${criterion}`)}
+                  >
+                    <span>{label}</span>
+                    <strong
+                      >{characterRecords.filter((c) =>
+                        criterion === 'stale'
+                          ? !['met', 'not-met'].includes(c.current.criterion)
+                          : c.current.criterion === criterion
+                      ).length}</strong
+                    >
+                  </a>
+                {/each}
+              </div>
+            </section>
+          {/if}
         {/if}
         {#if view === 'history'}
           <section class="progress-section" aria-labelledby="recent-sessions-heading">
@@ -304,7 +363,17 @@
                         <strong class="session-title">
                           {#if session.mode === 'practice'}
                             <Dumbbell size={18} class="practice-icon" aria-hidden="true" />
-                            {m.progress_history_practice_lesson({ step: session.step })}
+                            {#if session.practiceContext === 'groups'}
+                              {m.practice_history_groups({ step: session.step })}
+                            {:else if session.practiceContext === 'words'}
+                              {m.context_words()}
+                            {:else if session.practiceContext === 'callsigns'}
+                              {m.context_callsigns()}
+                            {:else if session.practiceContext === 'contact'}
+                              {m.context_contact()}
+                            {:else}
+                              {m.practice_passage()}
+                            {/if}
                           {:else if session.mode === 'legacy'}
                             <History size={18} aria-hidden="true" />
                             {m.progress_history_legacy_lesson({ step: session.step })}
@@ -340,7 +409,11 @@
                         <dd>{session.effWpm ?? m.progress_unmeasured()}</dd>
                       </div>
                       <div>
-                        <dt>{m.profile_history_accuracy()}</dt>
+                        <dt>
+                          {session.mode === 'practice'
+                            ? m.practice_passage_accuracy()
+                            : m.profile_history_accuracy()}
+                        </dt>
                         <dd>
                           {session.accuracy == null
                             ? m.progress_unmeasured()
@@ -417,6 +490,31 @@
 </div>
 
 <style>
+  .section-nav {
+    flex-wrap: wrap;
+    container: progress-tabs / inline-size;
+  }
+  .section-nav a {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  @container progress-tabs (width < 16rem) {
+    .section-nav a {
+      flex-grow: 0;
+    }
+  }
+  .guided-next {
+    display: grid;
+    justify-items: start;
+    gap: var(--space-3);
+  }
+  .check-summary {
+    display: grid;
+    gap: var(--space-2);
+  }
+  .check-summary > a {
+    justify-self: start;
+  }
   .recall-summary {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -529,7 +627,7 @@
   }
 
   .progress-empty {
-    padding: var(--space-6);
+    padding: min(var(--space-6), 24px);
     background: var(--bg-surface);
     border-radius: var(--radius-lg);
     align-items: flex-start;
@@ -552,6 +650,8 @@
     gap: var(--space-8);
     width: 100%;
     margin: 0 auto;
+    overflow-wrap: anywhere;
+    hyphens: auto;
   }
 
   .progress-header {

@@ -84,17 +84,10 @@ export function resolveMigrationBanner(input: MigrationBannerInput): MigrationBa
     kind = 'guest-empty';
   }
 
-  const critical = [
-    'guest-history',
-    'signed-in-unclaimed',
-    'sync-pending',
-    'sync-failed',
-    'unknown'
-  ].includes(kind);
+  const critical = ['signed-in-unclaimed', 'sync-pending', 'sync-failed', 'unknown'].includes(kind);
   const tone: MigrationBannerState['tone'] =
     kind === 'sync-failed' ? 'danger' : critical ? 'warning' : 'info';
-  const showCheckpoint =
-    (kind === 'guest-history' || kind === 'signed-in-ok') && input.hasCheckpoints;
+  const showCheckpoint = kind === 'guest-history' && input.hasCheckpoints;
   const signature = [
     input.owner,
     kind,

@@ -15,6 +15,8 @@
     errorMessage?: string;
     sessionActionPending?: boolean;
     embedded?: boolean;
+    secondary?: boolean;
+    hint?: string;
     onStart: (step: number) => void;
     onResume?: (sessionId: string) => void;
     onDiscardResume?: () => void;
@@ -29,12 +31,17 @@
     errorMessage = '',
     sessionActionPending = false,
     embedded = false,
+    secondary = false,
+    hint = '',
     onStart = () => {},
     onResume = () => {},
     onDiscardResume = () => {}
   }: Props = $props();
 
-  const actionClass = $derived(['btn-cta', embedded ? 'training-start' : 'hero-btn']);
+  const actionClass = $derived([
+    secondary ? 'btn-ghost' : 'btn-cta',
+    embedded ? 'training-start' : 'hero-btn'
+  ]);
 </script>
 
 {#snippet activeHeading(heading: string, characters: string, status: string)}
@@ -52,13 +59,10 @@
 {/snippet}
 
 {#snippet startLesson(lessonStep: number, characters: string, showInstruction = false)}
-  <div class="hero-eyebrow">
-    {showInstruction ? m.lessons_start_here() : m.learn_next_recommendation()}
-  </div>
   <h2 class="hero-title">
     {m.home_lesson_title({ step: lessonStep, characters: characters.split('').join(', ') })}
   </h2>
-  {#if showInstruction}<p class="hero-desc">{m.learn_new_description()}</p>{/if}
+  {#if hint || showInstruction}<p class="hero-desc">{hint || m.learn_new_description()}</p>{/if}
   <div class="hero-actions">
     <button type="button" class={actionClass} onclick={() => onStart(lessonStep)}>
       <Play size={18} /><span>{m.learn_start_action({ step: lessonStep })}</span>
@@ -69,7 +73,9 @@
 <div
   class={['learn-hero-card', embedded && 'is-embedded']}
   role="region"
-  aria-label={m.learn_next_recommendation()}
+  aria-label={secondary
+    ? m.home_lesson_title({ step, characters: introducedChar.split('').join(', ') })
+    : m.learn_next_recommendation()}
   aria-busy={kind === 'loading' || sessionActionPending}
 >
   {#if kind === 'loading'}
@@ -123,7 +129,7 @@
       <div class="hero-eyebrow eyebrow-review">{m.learn_review_eyebrow()}</div>
       <h2 class="hero-title">{m.learn_review_title({ characters: reviewChars.join(', ') })}</h2>
     {/if}
-    <p class="hero-desc">{m.learn_review_description()}</p>
+    <p class="hero-desc">{hint || m.learn_review_description()}</p>
     <div class="hero-actions">
       <button type="button" class={actionClass} onclick={() => onStart(step)}>
         <RotateCcw size={18} />

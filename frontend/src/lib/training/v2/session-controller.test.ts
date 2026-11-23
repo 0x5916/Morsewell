@@ -127,6 +127,34 @@ function createMockPrompt(id: string, expectedText = 'T'): Prompt {
 }
 
 describe('Guided Session Controller (Svelte 5 runes)', () => {
+  it('offers the next sound only after a correct answer within the same exercise format', async () => {
+    const group = createMockPrompt('pair', 'KM');
+    group.spec.kind = 'short-group';
+    const audio = createFakeAudioEngine();
+    const ctrl = new GuidedSessionController({
+      step: 1,
+      prompts: [
+        createMockPrompt('1', 'K'),
+        createMockPrompt('2', 'M'),
+        createMockPrompt('3', 'K'),
+        group
+      ],
+      audioEngine: audio,
+      attemptRepo: createFakeAttemptRepo(),
+      sessionRepo: createFakeSessionRepo()
+    });
+    await ctrl.start();
+    // First answer is correct, second is wrong, third is correct just before a group.
+    for (const [index, canPlayNext] of [true, false, false, false].entries()) {
+      ctrl.play();
+      audio.finish();
+      ctrl.submitAnswer(index === 3 ? 'KM' : 'K', 'keyboard');
+      expect(ctrl.canPlayNextSound).toBe(canPlayNext);
+      ctrl.continue();
+    }
+    expect(ctrl.phase).toBe('complete');
+    await ctrl.dispose();
+  });
   it.each(['keyboard', 'grid'] as const)(
     'keeps correct warm-up answers correct via %s',
     async (mode: 'keyboard' | 'grid') => {
@@ -876,4 +904,139 @@ it('commits a first-response checkpoint before its attempt and retains feedback 
   resumed.continue();
   expect(resumed.currentPrompt?.id).toBe('later');
   await resumed.dispose();
+});
+
+it('excludes time away while preserving response time on both sides of a pause', async () => {
+  let time = 1000;
+  const audio = createFakeAudioEngine();
+  const controller = new GuidedSessionController({
+    step: 1,
+    prompts: [createMockPrompt('timed', 'K')],
+    clock: () => time,
+    audioEngine: audio,
+    attemptRepo: createFakeAttemptRepo(),
+    sessionRepo: createFakeSessionRepo()
+  });
+  await controller.start();
+  controller.play();
+  audio.finish();
+  time += 500;
+  controller.handleVisibilityChange(true);
+  time += 60_000;
+  controller.resume();
+  time += 700;
+  controller.submitAnswer('K', 'keyboard');
+  expect(controller.lastAttempt).toMatchObject({ latencyMs: 1200, classification: 'automatic' });
+  await controller.dispose();
+});
+
+it('keeps an unheard scored prompt eligible after saving while ready', async () => {
+  let checkpoint:
+    | NonNullable<import('./session-controller.svelte').SessionControllerDependencies['resume']>
+    | undefined;
+  const deps = {
+    step: 1,
+    prompts: [createMockPrompt('unheard', 'K')],
+    audioEngine: createFakeAudioEngine(),
+    attemptRepo: createFakeAttemptRepo(),
+    sessionRepo: createFakeSessionRepo()
+  };
+  const controller = new GuidedSessionController({
+    ...deps,
+    saveCheckpoint: async (state, record, draft) => {
+      checkpoint = { state, record, draft };
+    }
+  });
+  await controller.start();
+  controller.suspend();
+  await controller.flushPersistence();
+  await controller.dispose();
+  const resumed = new GuidedSessionController({ ...deps, resume: checkpoint! });
+  await resumed.start();
+  resumed.resume();
+  expect(resumed.currentPrompt?.isScored).toBe(true);
+  expect(resumed.replayCount).toBe(0);
+  await resumed.dispose();
+});
+
+it.each([
+  ['ready', true],
+  ['paused before playback', true],
+  ['paused during playback', false],
+  ['first-play error', false],
+  ['paused after an error', false],
+  ['paused while answering', false]
+] as const)(
+  'restores the scoring eligibility of a markerless checkpoint saved %s',
+  async (stage, eligible) => {
+    const audio = createFakeAudioEngine();
+    const deps = {
+      step: 1,
+      prompts: [createMockPrompt('original', 'K')],
+      audioEngine: audio,
+      attemptRepo: createFakeAttemptRepo(),
+      sessionRepo: createFakeSessionRepo()
+    };
+    let checkpoint: NonNullable<
+      import('./session-controller.svelte').SessionControllerDependencies['resume']
+    >;
+    const controller = new GuidedSessionController({
+      ...deps,
+      saveCheckpoint: async (state, record, draft) => {
+        checkpoint = { state, record, draft };
+      }
+    });
+    await controller.start();
+    if (stage !== 'ready' && stage !== 'paused before playback') controller.play();
+    if (stage === 'first-play error' || stage === 'paused after an error')
+      for (const listener of audio.listeners) listener('error');
+    if (stage === 'paused while answering') audio.finish();
+    if (stage.startsWith('paused')) controller.suspend();
+    await controller.flushPersistence();
+    delete checkpoint!.state.promptStarted;
+    await controller.dispose();
+
+    const resumed = new GuidedSessionController({ ...deps, resume: checkpoint! });
+    await resumed.start();
+    expect(resumed.state.promptStarted).toBe(!eligible);
+    resumed.resume();
+    resumed.play();
+    audio.finish();
+    resumed.submitAnswer('K', 'keyboard');
+    expect(resumed.lastAttempt).toMatchObject({
+      classification: eligible ? 'automatic' : 'unmeasured',
+      replayCount: eligible ? 0 : 1
+    });
+    await resumed.dispose();
+  }
+);
+
+it('uses committed history at completion, including answers received during the session', async () => {
+  const repo = createFakeAttemptRepo(),
+    audio = createFakeAudioEngine();
+  const controller = new GuidedSessionController({
+    step: 1,
+    prompts: [createMockPrompt('present', 'K')],
+    audioEngine: audio,
+    attemptRepo: repo,
+    sessionRepo: createFakeSessionRepo()
+  });
+  await controller.start();
+  controller.play();
+  audio.finish();
+  controller.submitAnswer('K', 'keyboard');
+  const example = controller.lastAttempt!;
+  const synced = Array.from({ length: 24 }, (_, index) => ({
+    ...example,
+    id: 'sync' + index,
+    sessionId: 'other' + Math.floor(index / 12),
+    targetCharacter: index % 2 ? 'K' : 'M',
+    latencyMs: 900
+  }));
+  vi.mocked(repo.getAttemptsByTimeRange).mockResolvedValue(synced);
+  controller.continue();
+  expect(await controller.flushPersistence()).toBe(true);
+  expect(controller.summary?.unlockedNextStep).toBe(true);
+  expect(controller.summary?.coaching).toEqual({ kind: 'more-answers' });
+  await controller.dispose();
 });

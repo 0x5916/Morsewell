@@ -1,59 +1,8 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import de from '../messages/de.json' with { type: 'json' };
 import en from '../messages/en.json' with { type: 'json' };
 import { readGuidedCheckpoint, resetToHome } from './helpers';
-
-async function installDeterministicAudioClock(page: Page) {
-  await page.addInitScript(() => {
-    class FakeParam {
-      value = 0;
-      setValueAtTime() {}
-      linearRampToValueAtTime() {}
-    }
-    class FakeGain {
-      gain = new FakeParam();
-      connect() {}
-      disconnect() {}
-    }
-    class FakeOscillator {
-      frequency = new FakeParam();
-      onended: (() => void) | null = null;
-      connect() {}
-      disconnect() {}
-      start() {}
-      stop(when = 0) {
-        setTimeout(() => this.onended?.(), Math.max(0, when * 1000));
-      }
-    }
-    class FakeAudioContext {
-      state = 'running';
-      currentTime = 0;
-      destination = {};
-      baseLatency = 0;
-      outputLatency = 0;
-      createOscillator() {
-        return new FakeOscillator();
-      }
-      createGain() {
-        return new FakeGain();
-      }
-      async resume() {
-        this.state = 'running';
-      }
-      async suspend() {
-        this.state = 'suspended';
-      }
-      async close() {
-        this.state = 'closed';
-      }
-    }
-    Object.defineProperty(window, 'AudioContext', {
-      configurable: true,
-      writable: true,
-      value: FakeAudioContext
-    });
-  });
-}
+import { installDeterministicAudioClock } from './audio-clock';
 
 test('a locked direct lesson URL shows recovery and preserves the course gate', async ({
   page
@@ -65,11 +14,88 @@ test('a locked direct lesson URL shows recovery and preserves the course gate', 
     page.getByRole('heading', { name: 'Lesson 2 is not unlocked yet', level: 1 })
   ).toBeVisible();
   await expect(page.getByText('Complete the current guided lesson requirements')).toBeVisible();
+  await expect(page.getByRole('main')).toHaveCount(1);
 
   await page.getByRole('link', { name: 'Back to Lessons' }).click();
   await expect(page).toHaveURL(/\/en\/morse\/learn$/);
   await expect(page.getByRole('heading', { name: 'Learn', level: 1 })).toBeVisible();
   await expect(page.getByText('1 of 39 lessons unlocked')).toBeVisible();
+});
+
+test('a new learner sees the right prerequisite for each type of review', async ({ page }) => {
+  await resetToHome(page);
+  for (const [query, message, showTable] of [
+    ['check=KM', en.mixed_needs_characters, true],
+    ['review=KM', en.coaching_needs_characters, true],
+    ['review=return', en.screening_needs_proficiency, false],
+    ['check=KK', en.review_unavailable, false]
+  ] as const) {
+    await page.goto('/en/morse/learn/session?' + query);
+    await expect(page.getByText(message, { exact: true })).toBeVisible();
+    await expect(page.getByRole('main')).toHaveCount(1);
+    await expect(page.getByRole('link', { name: en.review_unavailable_familiarize })).toHaveCount(
+      showTable ? 1 : 0
+    );
+    await expect(page.getByRole('link', { name: en.home_all_lessons })).toBeVisible();
+  }
+});
+
+test('guided access requirements remain available alongside an optional recall check', async ({
+  page
+}) => {
+  await resetToHome(page, 'Returning learner / populated history');
+  await page.goto('/en/morse/learn');
+  await expect(page.getByRole('button', { name: 'Start lesson 2', exact: true })).toBeVisible();
+  const check = page.getByRole('link', { name: en.check_begin_explicit });
+  await expect(check).toHaveClass(/btn-ghost/);
+  await expect(
+    page.getByRole('heading', { name: 'Optional first-listen check: K, M' })
+  ).toBeVisible();
+  await expect(page.getByText(en.check_first_credit, { exact: true })).toBeVisible();
+  const requirements = page.locator('details.unlock-checks');
+  await requirements.locator(':scope > summary').click();
+  await expect(requirements.locator('.check-character')).toHaveText(['R']);
+  await expect(requirements.getByText('0 / 12')).toBeVisible();
+  const calculation = requirements.getByText('How targets are calculated', { exact: true });
+  const policy = requirements.getByText(/For each new character, give at least 12/);
+  await expect(policy).toBeHidden();
+  await calculation.click();
+  await expect(policy).toBeVisible();
+});
+
+test('recent activity and the guided lesson lead Progress before optional assessment', async ({
+  page
+}) => {
+  await resetToHome(page, 'Returning learner / populated history');
+  await page.goto('/en/morse/progress');
+  const activity = page.getByRole('region', { name: 'Recent activity summary' });
+  const guided = page.getByRole('link', { name: 'Start lesson 2' });
+  const check = page.getByRole('link', { name: en.check_begin_explicit });
+  await expect(guided).toHaveClass(/btn-primary/);
+  await expect(check).toHaveClass(/btn-ghost/);
+  expect((await activity.boundingBox())!.y).toBeLessThan((await guided.boundingBox())!.y);
+  expect((await guided.boundingBox())!.y).toBeLessThan((await check.boundingBox())!.y);
+});
+
+test('a first guided introduction keeps the unlock breakdown and directs a one-sound learner to a second sound', async ({
+  page
+}) => {
+  await resetToHome(page);
+  await installDeterministicAudioClock(page);
+  await page.goto('/en/morse/learn/session?step=1');
+  await page.getByRole('button', { name: 'Listen to K', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeEnabled();
+  await page.goto('/en/morse/learn');
+  const requirements = page.locator('details.unlock-checks');
+  await requirements.locator(':scope > summary').click();
+  await expect(requirements.locator('.check-character')).toHaveText(['K', 'M']);
+  await page.goto('/en/morse/progress?view=characters');
+  const record = page.locator('.character-evidence');
+  await record.locator('summary').click();
+  await expect(record).toContainText('No mixed check yet at this speed');
+  await expect(record).toContainText('Hear one more character to start a mixed check.');
+  await expect(record.locator('a[href*="check="]')).toHaveCount(0);
+  await expect(record.getByRole('link')).toHaveAttribute('href', /\/morse$/);
 });
 
 test.describe('guided-session phone header', () => {
@@ -155,9 +181,9 @@ test('an unlocked lesson starts, saves, and restores its checkpoint', async ({ p
 
   await page.getByRole('button', { name: 'Save & leave' }).click();
   await page.waitForURL('**/en/morse/learn');
-  await expect(page.getByRole('link', { name: 'Continue saved session' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Resume lesson' })).toBeVisible();
 
-  await page.getByRole('link', { name: 'Continue saved session' }).click();
+  await page.getByRole('link', { name: 'Resume lesson' }).click();
   await expect
     .poll(async () => (await readGuidedCheckpoint(page)) !== null, { timeout: 10_000 })
     .toBe(true);

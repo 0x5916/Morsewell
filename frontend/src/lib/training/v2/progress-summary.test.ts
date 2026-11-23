@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { sessionOccurredAt, summarizeProgress } from './progress-summary';
+import {
+  historyWithAnswerAccuracy,
+  sessionOccurredAt,
+  summarizeProgress
+} from './progress-summary';
 import type { AttemptEvent, HistorySessionRecord, TrainingSessionRecord } from './types';
 
 const NOW = '2026-10-16T12:00:00.000Z';
@@ -211,5 +215,34 @@ describe('local progress summary', () => {
       { expected: 'K', actual: 'M', confusionCount: 2, lastOccurredAt: NOW },
       { expected: 'M', actual: 'K', confusionCount: 2, lastOccurredAt: NOW }
     ]);
+  });
+});
+
+describe('session accuracy in history', () => {
+  const answers = Array.from({ length: 11 }, (_, i) =>
+    attempt({ id: String(i), isCorrect: i < 5 })
+  );
+  const events = [
+    ...answers,
+    attempt({ id: 'warmup', classification: 'unmeasured', isCorrect: true })
+  ];
+  it('uses exact scored counts for local and synced guided history without mutating stored records', () => {
+    const original = session({ accuracy: 0.455 });
+    for (const row of [
+      original,
+      { ...original, mode: 'guided' as const, eventIds: events.map((a) => a.id) }
+    ]) {
+      expect(historyWithAnswerAccuracy([row], events)[0].accuracy).toBe(5 / 11);
+      expect(row.accuracy).toBe(0.455);
+    }
+  });
+  it('keeps the stored score for partial manifests, passage and legacy records', () => {
+    const rows: HistorySessionRecord[] = [
+      session({ accuracy: 0.455, eventIds: [...events.map((a) => a.id), 'not-downloaded'] }),
+      session({ mode: 'practice', accuracy: 0.86 }),
+      session({ accuracy: 0.75 }),
+      { ...session(), mode: 'legacy', accuracy: null }
+    ];
+    expect(historyWithAnswerAccuracy(rows, events)).toEqual(rows);
   });
 });

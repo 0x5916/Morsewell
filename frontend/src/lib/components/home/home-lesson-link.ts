@@ -1,8 +1,20 @@
 import * as m from '#lib/paraglide/messages.js';
-import { learningRecommendationHref } from '#lib/data/learning-snapshot.ts';
+import {
+  learningRecommendationHref,
+  returnScreeningTargets,
+  type LearningCharacter
+} from '#lib/data/learning-snapshot.ts';
+import type { ConfusionPair } from '#lib/training/v2/types.ts';
+import type { SessionCheckpoint } from '#lib/data/session-checkpoints.ts';
 import { LESSONS } from '#lib/training/sequence.ts';
 import type { Recommendation } from '#lib/training/learning-policy/recommendation.ts';
-import { recommendationTitle } from '#lib/components/learning/recommendation-copy.ts';
+import {
+  recommendationHint,
+  savedSessionAction,
+  isOptionalCheck,
+  guidedRepeatHint,
+  recommendationTitle
+} from '#lib/components/learning/recommendation-copy.ts';
 import { isRecommendationLessonLocked } from '#lib/training/v2/lesson-access.ts';
 
 interface HomeLessonLink {
@@ -14,6 +26,8 @@ interface HomeLessonLink {
 interface HomeLessonInput {
   dashboard: {
     returning: boolean;
+    savedSession?: SessionCheckpoint | null;
+    summary?: { confusionPairs: ConfusionPair[] };
     unfinishedSession: { step: number } | null;
     guidance: {
       courseComplete: boolean;
@@ -24,6 +38,7 @@ interface HomeLessonInput {
   } | null;
   snapshot: {
     knownCharacters: string[];
+    characters: readonly Pick<LearningCharacter, 'character' | 'proficiency' | 'lastAssessedAt'>[];
     coverage: 'complete' | 'local-only' | 'partial';
     profile: { charWpm: number };
     recommendation: { primary: Recommendation };
@@ -41,21 +56,38 @@ export function homeLessonLink({
   const path = '/morse/learn';
   if (!dashboard) return { title, hint: '', path };
 
+  if (dashboard.savedSession) return savedSessionAction(dashboard.savedSession);
   const unfinished = dashboard.unfinishedSession;
   if (!unfinished && snapshot && snapshot.knownCharacters.length >= 2) {
     const primary = snapshot.recommendation.primary;
-    if (!isRecommendationLessonLocked(primary, dashboard.guidance.unlockedStep)) {
+    if (
+      !isOptionalCheck(primary) &&
+      !isRecommendationLessonLocked(primary, dashboard.guidance.unlockedStep)
+    ) {
+      const destination = learningRecommendationHref(primary, snapshot.knownCharacters);
+      if (destination.includes('check='))
+        return {
+          title: m.check_begin_explicit(),
+          hint: m.check_home_hint({ characters: primary.targets.join(', ') }),
+          path: destination
+        };
       return {
         title: recommendationTitle(primary),
         hint:
           snapshot.coverage === 'partial'
             ? m.learning_coverage_partial()
-            : m.learning_overview_profile({ speed: snapshot.profile.charWpm }),
-        path: learningRecommendationHref(primary, snapshot.knownCharacters)
+            : recommendationHint(primary, snapshot.profile.charWpm),
+        path: destination
       };
     }
   }
-  if (dashboard.returning && !unfinished && !recentReview)
+  if (
+    dashboard.returning &&
+    !unfinished &&
+    !recentReview &&
+    snapshot &&
+    returnScreeningTargets(snapshot, null)?.length
+  )
     return {
       title: m.review_return_title(),
       hint: m.review_return_hint(),
@@ -72,10 +104,9 @@ export function homeLessonLink({
       ? m.home_lesson_title({ step, characters })
       : m.home_start_lesson_title({ step, characters }),
     hint: unfinished
-      ? m.learn_restart_title({ step })
-      : reviewChars.length
-        ? m.learn_review_title({ characters: reviewChars.join(', ') })
-        : '',
+      ? m.home_unfinished_hint()
+      : guidedRepeatHint(dashboard.summary?.confusionPairs ?? [], step) ||
+        (reviewChars.length ? m.learn_review_title({ characters: reviewChars.join(', ') }) : ''),
     path: unfinished ? path : `${path}/session?step=${step}`
   };
 }

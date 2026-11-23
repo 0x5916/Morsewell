@@ -7,7 +7,7 @@ export const SCORE_OK = 0.7;
 
 export type ScoreGrade = 'good' | 'ok' | 'bad';
 
-/** Upper-case and collapse whitespace; scoring and the word diff must agree. */
+/** Upper-case and collapse whitespace; matching follows the same rules as passage scoring. */
 function normalizeText(text: string): string {
   return text.toUpperCase().trim().replace(/\s+/g, ' ');
 }
@@ -18,85 +18,142 @@ export function scoreGrade(accuracy: number): ScoreGrade {
   return 'bad';
 }
 
-export function score(reference: string, input: string): number {
-  return cer(normalizeText(reference), normalizeText(input)).accuracy;
-}
-
-// ── Word-level diff ─────────────────────────────────────────────────────────
-
-type DiffType = 'correct' | 'substitution' | 'missing' | 'extra';
-
 export interface DiffToken {
-  ref: string; // reference word (empty when type === 'extra')
-  inp: string; // input word     (empty when type === 'missing')
-  type: DiffType;
+  ref: string;
+  inp: string;
+  type: 'correct' | 'substitution' | 'missing' | 'extra';
 }
 
-export function diffWords(reference: string, input: string): DiffToken[] {
-  const ref = normalizeText(reference).split(' ').filter(Boolean);
-  const inp = normalizeText(input).split(' ').filter(Boolean);
-
-  // LCS table — flat Int16Array (~24× less memory than nested JS arrays)
-  const m = ref.length,
-    n = inp.length;
-  const dp = new Int16Array((m + 1) * (n + 1));
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i * (n + 1) + j] =
-        ref[i - 1] === inp[j - 1]
-          ? dp[(i - 1) * (n + 1) + (j - 1)] + 1
-          : Math.max(dp[(i - 1) * (n + 1) + j], dp[i * (n + 1) + (j - 1)]);
-
-  // Traceback
-  const raw: DiffToken[] = [];
-  let i = m,
-    j = n;
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && ref[i - 1] === inp[j - 1]) {
-      raw.unshift({ ref: ref[i - 1], inp: inp[j - 1], type: 'correct' });
-      i--;
-      j--;
-    } else if (j > 0 && (i === 0 || dp[i * (n + 1) + (j - 1)] >= dp[(i - 1) * (n + 1) + j])) {
-      raw.unshift({ ref: '', inp: inp[j - 1], type: 'extra' });
-      j--;
-    } else {
-      raw.unshift({ ref: ref[i - 1], inp: '', type: 'missing' });
-      i--;
-    }
-  }
-
-  // Merge adjacent missing+extra into substitution
-  const tokens: DiffToken[] = [];
-  for (let k = 0; k < raw.length; k++) {
-    if (raw[k].type === 'missing' && k + 1 < raw.length && raw[k + 1].type === 'extra') {
-      tokens.push({ ref: raw[k].ref, inp: raw[k + 1].inp, type: 'substitution' });
-      k++;
-    } else {
-      tokens.push(raw[k]);
-    }
-  }
-  return tokens;
+export interface PassageComparison {
+  accuracy: number;
+  differences: number;
+  /** Some displayed symbols occupy multiple units in the stored passage score. */
+  usesUnicodeUnits?: true;
+  /** Each group follows the spacing in the source. An erroneous space is shown explicitly. */
+  groups: DiffToken[][];
 }
 
-function cer(reference: string, input: string) {
-  const editDist = levenshtein(reference, input);
-  const cer = editDist / reference.length;
-  const accuracy = Math.max(0, 1 - cer);
-  return { accuracy, cer, editDistance: editDist };
+function costs(reference: string[], input: string[]): number[] {
+  let previous = Array.from({ length: input.length + 1 }, (_, i) => i);
+  let next = new Array<number>(input.length + 1);
+  for (let i = 1; i <= reference.length; i++) {
+    next[0] = i;
+    for (let j = 1; j <= input.length; j++) {
+      next[j] =
+        reference[i - 1] === input[j - 1]
+          ? previous[j - 1]
+          : 1 + Math.min(previous[j - 1], previous[j], next[j - 1]);
+    }
+    [previous, next] = [next, previous];
+  }
+  return previous;
 }
 
-function levenshtein(a: string, b: string): number {
-  const m = a.length,
-    n = b.length;
-  let prev = Array.from({ length: n + 1 }, (_, j) => j);
-  let curr = new Array<number>(n + 1);
-  for (let i = 1; i <= m; i++) {
-    curr[0] = i;
-    for (let j = 1; j <= n; j++) {
-      curr[j] =
-        a[i - 1] === b[j - 1] ? prev[j - 1] : 1 + Math.min(prev[j], curr[j - 1], prev[j - 1]);
+/** Hirschberg traceback: find where a minimum-edit alignment crosses the middle source row.
+ * Using two distance rows rather than a full matrix also supports long restored drafts. */
+function splitInput(left: string[], right: string[], input: string[]): number {
+  const forward = costs(left, input);
+  const backward = costs(right.slice().reverse(), input.slice().reverse());
+  // Prefer the same relative position when several alignments cost the same.
+  const middle = (left.length / (left.length + right.length)) * input.length;
+  let split = 0;
+  let lowest = Infinity;
+  for (let j = 0; j <= input.length; j++) {
+    const total = forward[j] + backward[input.length - j];
+    if (total < lowest || (total === lowest && Math.abs(j - middle) < Math.abs(split - middle))) {
+      lowest = total;
+      split = j;
     }
-    [prev, curr] = [curr, prev];
   }
-  return prev[n];
+  return split;
+}
+
+type EmitCharacter = (sent: string, copied: string) => void;
+
+function align(reference: string[], input: string[], emit: EmitCharacter): void {
+  let start = 0;
+  while (start < reference.length && start < input.length && reference[start] === input[start]) {
+    emit(reference[start], input[start]);
+    start++;
+  }
+  let r = reference.length,
+    i = input.length;
+  while (r > start && i > start && reference[r - 1] === input[i - 1]) {
+    r--;
+    i--;
+  }
+
+  if (r === start) {
+    for (let j = start; j < i; j++) emit('', input[j]);
+  } else if (i === start) {
+    for (let j = start; j < r; j++) emit(reference[j], '');
+  } else if (r === start + 1) {
+    const match = input.slice(start, i).indexOf(reference[start]);
+    const pair = start + Math.max(0, match);
+    for (let j = start; j < i; j++) emit(j === pair ? reference[start] : '', input[j]);
+  } else {
+    const middle = start + Math.floor((r - start) / 2);
+    const left = reference.slice(start, middle),
+      right = reference.slice(middle, r);
+    const copy = input.slice(start, i);
+    const split = splitInput(left, right, copy);
+    align(left, copy.slice(0, split), emit);
+    align(right, copy.slice(split), emit);
+  }
+  for (let j = r; j < reference.length; j++) emit(reference[j], reference[j]);
+}
+
+function displaySymbols(text: string): string[] {
+  if (/^[ -~]*$/.test(text) || typeof Intl.Segmenter !== 'function') return Array.from(text);
+  const symbols = new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text);
+  return Array.from(symbols, (symbol) => symbol.segment);
+}
+
+/** Keep the practice-copy-v1 score while showing edits to whole visible symbols. */
+export function comparePassage(reference: string, input: string): PassageComparison {
+  const sent = normalizeText(reference);
+  const copied = normalizeText(input);
+  const sentSymbols = displaySymbols(sent);
+  const copiedSymbols = displaySymbols(copied);
+  const usesUnicodeUnits =
+    sent.length !== sentSymbols.length || copied.length !== copiedSymbols.length;
+  const groups: DiffToken[][] = [];
+  let group: DiffToken[] = [];
+  let differences = 0;
+  align(sentSymbols, copiedSymbols, (ref, inp) => {
+    const type = ref === inp ? 'correct' : !ref ? 'extra' : !inp ? 'missing' : 'substitution';
+    if (type !== 'correct') differences++;
+    if (ref !== ' ' || type !== 'correct') {
+      const previous = group.at(-1);
+      if (type === 'correct' && previous?.type === 'correct') {
+        previous.ref += ref;
+        previous.inp += inp;
+      } else {
+        group.push({ type, ref, inp });
+      }
+    }
+    if (ref === ' ') {
+      groups.push(group);
+      group = [];
+    }
+  });
+  if (group.length) groups.push(group);
+  // Persisted scores use UTF-16 edit distance, including when two different
+  // emoji share a surrogate. Only the visible alignment uses graphemes.
+  if (usesUnicodeUnits) {
+    differences = 0;
+    align(sent.split(''), copied.split(''), (ref, inp) => {
+      if (ref !== inp) differences++;
+    });
+  }
+  return {
+    groups,
+    differences,
+    accuracy: Math.max(0, 1 - differences / sent.length),
+    ...(usesUnicodeUnits && { usesUnicodeUnits })
+  };
+}
+
+export function score(reference: string, input: string): number {
+  return comparePassage(reference, input).accuracy;
 }

@@ -36,6 +36,30 @@ describe('course guidance', () => {
     expect(guidance.courseComplete).toBe(false);
   });
 
+  it('only shows unmet historical targets and preserves older qualifying work', () => {
+    const older = '2026-06-10T12:00:00.000Z';
+    const partialM = stableAttempts('M', older).slice(0, 10);
+    const recentErrors = stableAttempts('K').map((attempt) => ({
+      ...attempt,
+      id: 'recent-' + attempt.id,
+      isCorrect: false,
+      classification: 'incorrect' as const
+    }));
+    const guidance = deriveCourseGuidance(recentErrors, NOW, ['KM', 'R'], {
+      history: [...stableAttempts('K', older), ...partialM, ...recentErrors]
+    });
+
+    expect(guidance.currentStep).toBe(1);
+    expect(guidance.masteryMap.get('M')?.totalAttempts).toBe(0);
+    expect(guidance.remainingMasteries).toHaveLength(1);
+    expect(guidance.remainingMasteries[0]).toMatchObject({
+      character: 'M',
+      totalAttempts: 10,
+      sessionCount: 2,
+      rollingAccuracy: 1
+    });
+  });
+
   it('does not declare completion when the final lesson has only just unlocked', () => {
     const guidance = deriveCourseGuidance(stableAttempts('KMR'), NOW, ['KM', 'R', 'S']);
     expect(guidance.currentStep).toBe(3);

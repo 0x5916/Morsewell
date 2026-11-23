@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SCORE_GOOD, SCORE_OK, diffWords, score, scoreGrade } from '#lib/score.ts';
+import { SCORE_GOOD, SCORE_OK, comparePassage, score, scoreGrade } from '#lib/score.ts';
 
 describe('scoreGrade', () => {
   it('maps accuracy to the shared grade thresholds', () => {
@@ -51,38 +51,81 @@ describe('score (character error rate)', () => {
   });
 });
 
-describe('diffWords', () => {
-  it('marks every word correct for an exact match', () => {
-    const tokens = diffWords('AB CD', 'ab cd');
-    expect(tokens).toEqual([
-      { ref: 'AB', inp: 'AB', type: 'correct' },
-      { ref: 'CD', inp: 'CD', type: 'correct' }
+describe('passage corrections', () => {
+  it('keeps two changed final letters in their original groups', () => {
+    const comparison = comparePassage('KMMMM MMMKK', 'KMMMK MMMKM');
+    expect(comparison.differences).toBe(2);
+    expect(comparison.accuracy).toBeCloseTo(9 / 11);
+    expect(comparison.groups).toEqual([
+      [
+        { type: 'correct', ref: 'KMMM', inp: 'KMMM' },
+        { type: 'substitution', ref: 'M', inp: 'K' }
+      ],
+      [
+        { type: 'correct', ref: 'MMMK', inp: 'MMMK' },
+        { type: 'substitution', ref: 'K', inp: 'M' }
+      ]
     ]);
   });
 
-  it('merges an adjacent missing + extra into a substitution', () => {
-    const tokens = diffWords('AB CD', 'AB XY');
-    expect(tokens).toEqual([
-      { ref: 'AB', inp: 'AB', type: 'correct' },
-      { ref: 'CD', inp: 'XY', type: 'substitution' }
+  it.each([
+    ['A B', 'AB', 'missing', ' ', ''],
+    ['AB', 'A B', 'extra', '', ' '],
+    ['A B', 'AXB', 'substitution', ' ', 'X'],
+    ['ABC', 'A C', 'substitution', 'B', ' '],
+    ['K M', 'K MX', 'extra', '', 'X'],
+    ['K MM', 'K M', 'missing', 'M', '']
+  ])('counts and identifies a single edit in %s vs %s', (source, copy, type, ref, inp) => {
+    const comparison = comparePassage(source, copy);
+    expect(comparison.differences).toBe(1);
+    expect(comparison.groups.flat().filter((token) => token.type !== 'correct')).toEqual([
+      { type, ref, inp }
+    ]);
+    expect(comparison.accuracy).toBeCloseTo(1 - 1 / source.length);
+    expect(comparison.groups).toHaveLength(source.split(' ').length);
+  });
+
+  it('preserves normalized group boundaries and reports a perfect copy', () => {
+    expect(comparePassage('  AB  CD ', 'ab\ncd')).toEqual({
+      accuracy: 1,
+      differences: 0,
+      groups: [
+        [{ type: 'correct', ref: 'AB', inp: 'AB' }],
+        [{ type: 'correct', ref: 'CD', inp: 'CD' }]
+      ]
+    });
+  });
+
+  it('prefers corresponding positions in an ambiguous transposition', () => {
+    expect(comparePassage('KM', 'MK').groups[0].map((token) => token.type)).toEqual([
+      'substitution',
+      'substitution'
     ]);
   });
 
-  it('reports missing and extra words when counts differ', () => {
-    const tokens = diffWords('AB CD EF', 'AB EF GH');
-    expect(tokens.filter((token) => token.type === 'missing')).toEqual([
-      { ref: 'CD', inp: '', type: 'missing' }
-    ]);
-    expect(tokens.filter((token) => token.type === 'extra')).toEqual([
-      { ref: '', inp: 'GH', type: 'extra' }
-    ]);
-  });
+  it.each([
+    ['KM', 'K🦊', 'M', '🦊', 2],
+    ['🦊', '🦄', '🦊', '🦄', 1],
+    ['👩🏾‍🚀M', '👨🏻‍🚀M', '👩🏾‍🚀', '👨🏻‍🚀', 2],
+    ['KE\u0301', 'KE', 'E\u0301', 'E', 1],
+    ['🇯🇵', '🇨🇳', '🇯🇵', '🇨🇳', 2]
+  ] as const)(
+    'shows whole symbols for %s versus %s and retains the stored edit distance',
+    (sent, input, ref, inp, differences) => {
+      const comparison = comparePassage(sent, input);
+      expect(comparison.groups.flat().filter((token) => token.type !== 'correct')).toEqual([
+        { type: 'substitution', ref, inp }
+      ]);
+      expect(comparison.usesUnicodeUnits).toBe(true);
+      expect(comparison.differences).toBe(differences);
+      expect(comparison.accuracy).toBe(Math.max(0, 1 - differences / sent.length));
+    }
+  );
 
-  it('normalizes whitespace and empty input', () => {
-    expect(diffWords('  AB   CD ', 'ab cd')).toHaveLength(2);
-    expect(diffWords('AB CD', '')).toEqual([
-      { ref: 'AB', inp: '', type: 'missing' },
-      { ref: 'CD', inp: '', type: 'missing' }
-    ]);
+  it('handles a localized error in a long restored passage', () => {
+    const text = 'K'.repeat(9999);
+    const result = comparePassage(text + 'M', text + 'K');
+    expect(result.differences).toBe(1);
+    expect(result.groups[0]).toHaveLength(2);
   });
 });

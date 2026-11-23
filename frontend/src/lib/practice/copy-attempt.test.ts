@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { comparePassage } from '../score';
 import { canCheck } from '../training/session';
 import { calculateDuration } from '../training/timing';
 import {
@@ -6,7 +7,9 @@ import {
   emptyCopyAttempt,
   copyPlaybackEvent,
   createPracticeSessionRecord,
+  selectedGroupLesson,
   reviewCopyAttempt,
+  restoreCopyAttempt,
   copyInputLimit,
   boundCopyInput
 } from './copy-attempt';
@@ -27,6 +30,7 @@ describe('free copy attempt', () => {
       schemaVersion: 1,
       id: 'practice-1',
       mode: 'practice',
+      practiceContext: 'groups',
       accuracy: 0,
       step: 3,
       charWpm: settings.charWpm,
@@ -46,10 +50,49 @@ describe('free copy attempt', () => {
     ).toBeNull();
   });
 
+  it.each(['words', 'callsigns', 'contact'] as const)(
+    'keeps the selected groups lesson while practising %s',
+    (context) => {
+      const contextual = createCopyAttempt(2, settings, undefined, () => 0, context);
+      expect(contextual.groupLesson).toBe(2);
+      const result = reviewCopyAttempt(
+        copyPlaybackEvent(contextual, 'start'),
+        contextual.exercise.text
+      );
+      expect(createPracticeSessionRecord(result, 'p')).toMatchObject({
+        practiceContext: context,
+        accuracy: 1
+      });
+      const groups = createCopyAttempt(contextual.groupLesson!, settings, result, () => 0);
+      expect(groups.exercise.lesson).toBe(2);
+    }
+  );
+
   it('keeps prerender state deterministic and unstarted', () => {
     expect(emptyCopyAttempt()).toEqual(emptyCopyAttempt());
     expect(emptyCopyAttempt().exercise.text).toBe('');
     expect(emptyCopyAttempt().session.status).toBe('ready');
+  });
+
+  it('restores the chosen group level from new and old checkpoints, even after checking', () => {
+    const words = createCopyAttempt(3, settings, undefined, () => 0, 'words');
+    const reviewed = reviewCopyAttempt(copyPlaybackEvent(words, 'start'), words.exercise.text);
+    expect(selectedGroupLesson(structuredClone(reviewed), 1)).toBe(3);
+    // Old contextual checkpoints only recorded 39, the size of the whole course.
+    const oldWords = {
+      ...reviewed,
+      groupLesson: undefined,
+      exercise: { ...words.exercise, lesson: 39 }
+    };
+    expect(selectedGroupLesson(oldWords, 7)).toBe(7);
+    const oldGroups = { ...createCopyAttempt(3, settings), groupLesson: undefined };
+    expect(selectedGroupLesson(oldGroups, 7)).toBe(3);
+    expect(
+      selectedGroupLesson(
+        { ...oldGroups, exercise: { ...oldGroups.exercise, context: 'groups' } },
+        7
+      )
+    ).toBe(3);
   });
 
   it('creates one stable exercise with a normalized settings snapshot and exact duration', () => {
@@ -114,13 +157,55 @@ describe('free copy attempt', () => {
     expect(boundCopyInput(started.exercise.text, input)).toHaveLength(limit);
     const reviewed = reviewCopyAttempt(started, input);
     expect(reviewed.review?.result.accuracy).toBe(0);
-    expect(
-      reviewed
-        .review!.diffTokens.map((token) => token.inp)
-        .filter(Boolean)
-        .join(' ')
-    ).toHaveLength(limit - 1);
+    expect(reviewed.review?.comparison).toEqual(
+      comparePassage(started.exercise.text, input.slice(0, limit))
+    );
     expect(copyInputLimit('')).toBe(1);
+  });
+
+  it('rebuilds corrections for older checked drafts without recording a new score', () => {
+    const started = copyPlaybackEvent(create(), 'start');
+    const checked = reviewCopyAttempt(started, 'K');
+    const legacy = {
+      ...checked,
+      review: {
+        result: checked.review!.result,
+        diffTokens: [{ ref: 'OLD', inp: 'TOKEN', type: 'substitution' }]
+      }
+    };
+    expect(restoreCopyAttempt(legacy, 'K').review?.comparison).toEqual(checked.review!.comparison);
+    expect(createPracticeSessionRecord(legacy, 'same')).toEqual(
+      createPracticeSessionRecord(checked, 'same')
+    );
+  });
+
+  it('rebuilds persisted split-surrogate and malformed comparisons from the saved draft', () => {
+    const started = copyPlaybackEvent(create(), 'start');
+    started.exercise.text = 'KM';
+    const checked = reviewCopyAttempt(started, 'K🦊');
+    for (const comparison of [
+      { accuracy: 0, differences: 2, groups: [[{ type: 'extra', ref: '', inp: '\ud83e' }]] },
+      { accuracy: 0, differences: 2, groups: null }
+    ]) {
+      const saved = { ...checked, review: { result: checked.review!.result, comparison } };
+      const restored = restoreCopyAttempt(saved as typeof checked, 'K🦊');
+      expect(restored.review).toEqual(checked.review);
+      expect(createPracticeSessionRecord(restored, 'same')).toEqual(
+        createPracticeSessionRecord(checked, 'same')
+      );
+    }
+  });
+
+  it('keeps the original numeric grade when a draft was truncated inside an emoji', () => {
+    const started = copyPlaybackEvent(create(), 'start');
+    started.exercise.text = 'KM';
+    const input = 'KMK🦊';
+    const bounded = boundCopyInput('KM', input);
+    expect(bounded).toBe('KMK\ud83e');
+    const checked = reviewCopyAttempt(started, input);
+    expect(checked.review?.comparison?.differences).toBe(2);
+    expect(checked.review?.result.accuracy).toBe(0);
+    expect(restoreCopyAttempt(checked, bounded).review).toEqual(checked.review);
   });
 
   it('preserves case, whitespace, insertion and deletion scoring within the copy limit', () => {

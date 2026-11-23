@@ -9,6 +9,8 @@ import type { TrainingSessionRecord } from '../training/v2/types';
 import type { ReviewPlan } from '../training/targeted-review';
 import type { MixedCheckSession } from '../training/learning-policy/mixed-plan';
 import type { CopyAttempt } from '../practice/copy-attempt';
+import { isPracticeContext } from '../training/contextual-practice';
+import { LESSONS } from '../training/sequence';
 export interface GuidedCheckpoint {
   version: 1;
   kind: 'guided';
@@ -59,12 +61,31 @@ function validCopyAttempt(attempt: CopyAttempt | undefined): boolean {
   if (!attempt || typeof attempt !== 'object') return false;
   const settings = attempt.settings;
   const session = attempt.session;
+  // Rebuild display tokens on restore. Only the original score and completion
+  // time are needed to retry saving a previously checked passage.
+  if (attempt.review != null) {
+    const result = attempt.review.result;
+    if (
+      !result ||
+      !finite(result.accuracy) ||
+      result.accuracy < 0 ||
+      result.accuracy > 1 ||
+      typeof result.completedAt !== 'string' ||
+      !Number.isFinite(Date.parse(result.completedAt))
+    )
+      return false;
+  }
   return (
     typeof attempt.id === 'string' &&
     attempt.id.length > 0 &&
     !!attempt.exercise &&
     typeof attempt.exercise === 'object' &&
     finite(attempt.exercise.lesson) &&
+    (attempt.exercise.context === undefined || isPracticeContext(attempt.exercise.context)) &&
+    (attempt.groupLesson === undefined ||
+      (Number.isInteger(attempt.groupLesson) &&
+        attempt.groupLesson >= 1 &&
+        attempt.groupLesson <= LESSONS.length)) &&
     typeof attempt.exercise.text === 'string' &&
     attempt.exercise.text.length <= 10000 &&
     !!settings &&
@@ -77,6 +98,7 @@ function validCopyAttempt(attempt: CopyAttempt | undefined): boolean {
     !!session &&
     typeof session === 'object' &&
     COPY_STATUSES.includes(session.status) &&
+    (session.status !== 'reviewed' || attempt.review != null) &&
     finite(session.attempt) &&
     session.attempt >= 1 &&
     (session.recordedAttempt === null ||
@@ -219,9 +241,19 @@ export function checkpointMetadata(c: GuidedCheckpoint): LearningSessionPlan {
     reviewCycleIds: plan?.reviewCycleIds
   };
 }
-export async function discardCheckpoint(owner: string, c: SessionCheckpoint) {
-  const release = await claimSession(owner, c.id, true);
+export async function discardCheckpoint(owner: string, selected: SessionCheckpoint) {
+  const release = await claimSession(owner, selected.id, true);
   try {
+    const c = await loadCheckpoint(owner, selected.id);
+    // A second tab may have saved a newer draft while the confirmation was open.
+    if (
+      !c ||
+      c.kind !== selected.kind ||
+      c.savedAt !== selected.savedAt ||
+      c.draft !== selected.draft ||
+      (c.kind === 'copy' && selected.kind === 'copy' && c.attempt.id !== selected.attempt.id)
+    )
+      return;
     if (c.kind === 'guided') {
       if (c.review || c.mixed) {
         const db = await openLearningEvidenceDb();

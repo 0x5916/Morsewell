@@ -72,19 +72,8 @@
   role="region"
   aria-label={m.practice_familiarization_region()}
 >
-  <div class="drill-header">
-    <h2 class="drill-title">{m.trainer_drill_label()}</h2>
-    <p class="drill-meta">
-      {m.trainer_summary_meta_drill({
-        count: String(availableChars.length),
-        speed: `${charWpm}/${effWpm}`,
-        hz: String(freq)
-      })}
-    </p>
-  </div>
-
   <div class="char-hero">
-    <div class="display-character">{selectedChar}</div>
+    <h2 class="display-character">{selectedChar}</h2>
     {#if charMorse}
       <div class="display-morse" aria-label={`${m.trainer_drill_morse()}: ${charMorse}`}>
         {charMorse}
@@ -108,9 +97,14 @@
       }}
       onEnded={() => (drillPlaying = false)}
       playTone={drillPlayed && !drillPlaying ? 'quiet' : 'primary'}
-      playLabel={drillPlayed ? m.trainer_replay() : m.trainer_drill_play()}
-      reservePlayLabels={[m.trainer_drill_play(), m.player_pause(), m.trainer_replay()]}
-      label={m.trainer_drill_audio()}
+      playLabel={drillPlayed
+        ? m.trainer_replay()
+        : m.trainer_drill_play({ character: selectedChar })}
+      reservePlayLabels={[
+        m.trainer_drill_play({ character: selectedChar }),
+        m.player_pause(),
+        m.trainer_replay()
+      ]}
     />
   </div>
 
@@ -131,6 +125,16 @@
     </div>
   </div>
 
+  <details class="sound-details">
+    <summary class="training-disclosure">{m.practice_sound_details()}</summary>
+    <p class="drill-meta">
+      {m.trainer_summary_meta_drill({
+        count: String(availableChars.length),
+        speed: `${charWpm}/${effWpm}`,
+        hz: String(freq)
+      })}
+    </p>
+  </details>
   <div class="drill-actions">
     <button
       type="button"
@@ -153,18 +157,9 @@
     max-width: var(--max-width-narrow);
   }
 
-  .drill-header {
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-
-  .drill-title {
-    margin: 0;
-    font-size: var(--text-xl);
-    font-weight: 700;
-    color: var(--text-primary);
+  .sound-details summary {
+    min-height: var(--answer-target-min);
+    padding-block: var(--space-2);
   }
 
   .drill-meta {
@@ -183,6 +178,7 @@
   }
 
   .display-character {
+    margin: 0;
     font-family: var(--font-mono);
     font-size: 4.5rem;
     font-weight: 700;

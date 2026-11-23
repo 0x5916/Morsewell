@@ -6,8 +6,9 @@ import {
 } from './learning-evidence';
 import { LEARNING_PILOT_DB_NAME, openLearningPilotDb } from './learning-pilot';
 import { canonicalImportRecord } from './training-sync-repository';
+import { isPracticeContext } from '../training/contextual-practice';
 import type { AttemptEvent, TrainingSessionRecord } from '../training/v2/types';
-import { payloadKey } from './owned-training';
+import { payloadKey, practiceContextsConflict } from './owned-training';
 import { openTrainingDb, reqToPromise, withTransaction } from './training-db';
 import { TRAINING_DB_NAME, OWNED_STORES, TRAINING_STORES } from './training-schema';
 
@@ -101,6 +102,11 @@ function sameRecord(name: string, existing: LocalRow, row: LocalRow, evidence: b
   }
   if (name === OWNED_STORES.attempts || name === OWNED_STORES.sessions) {
     const kind = name === OWNED_STORES.attempts ? 'attempt' : 'session';
+    if (
+      kind === 'session' &&
+      practiceContextsConflict(existing.practiceContext, row.practiceContext)
+    )
+      return false;
     try {
       const key = (value: LocalRow) =>
         canonicalImportRecord(kind, value as unknown as AttemptEvent | TrainingSessionRecord);
@@ -181,6 +187,15 @@ async function mergeDatabase(db: IDBDatabase, prepared: PreparedStore[], commit:
               );
           } else if (!sameRecord(name, existing, row, evidence)) {
             throw Error('conflict');
+          } else if (
+            name === OWNED_STORES.sessions &&
+            existing.mode === 'practice' &&
+            !existing.practiceContext &&
+            isPracticeContext(row.practiceContext)
+          ) {
+            if (commit)
+              await reqToPromise(store.put({ ...existing, practiceContext: row.practiceContext }));
+            inserted++;
           }
         }
       }

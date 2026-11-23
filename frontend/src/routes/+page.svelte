@@ -8,6 +8,7 @@
     Dumbbell,
     Radio
   } from '@lucide/svelte';
+  import { prepareCheckLink } from '#lib/check-start-intent.ts';
   import { page } from '$app/state';
   import { user } from '#lib/auth.ts';
   import { homeLessonLink } from '#lib/components/home/home-lesson-link.ts';
@@ -80,7 +81,8 @@
       if (current()) {
         dashboard = result;
         loadedOwner = owner;
-        dashboardVisible = Boolean($user) || result.hasActivity;
+        dashboardVisible =
+          Boolean($user || result.unfinishedSession || result.savedSession) || result.hasActivity;
       }
     } catch {
       if (current()) {
@@ -136,7 +138,11 @@
     <nav aria-label={m.home_go_title()}>
       <ul class="training-links">
         <li>
-          <a class="training-link training-link--recommended" href={href(lessonLink.path)}>
+          <a
+            class="training-link training-link--recommended"
+            href={href(lessonLink.path)}
+            onclick={prepareCheckLink}
+          >
             <Radio size={24} aria-hidden="true" />
             <span>
               <strong class="training-title">{lessonLink.title}</strong>
@@ -145,15 +151,15 @@
             <ChevronRight size={18} aria-hidden="true" />
           </a>
         </li>
-        <li>
-          <a class="training-link" href={href('/morse/practice')}>
-            <Dumbbell size={24} aria-hidden="true" />
-            <span>
-              <strong class="training-title">{m.nav_practice()}</strong>
-            </span>
-            <ChevronRight size={18} aria-hidden="true" />
-          </a>
-        </li>
+        {#if !lessonLink.path.startsWith('/morse/practice')}<li>
+            <a class="training-link" href={href('/morse/practice')}>
+              <Dumbbell size={24} aria-hidden="true" />
+              <span>
+                <strong class="training-title">{m.nav_practice()}</strong>
+              </span>
+              <ChevronRight size={18} aria-hidden="true" />
+            </a>
+          </li>{/if}
       </ul>
       <a class="reference-link" href={href('/morse')}>
         <MorseTableIcon size={20} aria-hidden="true" />

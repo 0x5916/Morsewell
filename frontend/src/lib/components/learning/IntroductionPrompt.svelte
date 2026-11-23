@@ -1,18 +1,19 @@
 <script lang="ts">
-  import { Check, CircleAlert, Play, RotateCcw, Volume2 } from '@lucide/svelte';
+  import { CircleAlert, Play, RotateCcw, Volume2 } from '@lucide/svelte';
   import type { GuidedSessionPhase } from '../../training/v2/guided-session';
   import * as m from '#lib/paraglide/messages.js';
 
   interface Props {
     phase: GuidedSessionPhase;
     character: string;
+    showHint: boolean;
     hasPlayed: boolean;
     audioError: string | null;
     onPlay: () => void;
     onContinue: () => void;
   }
 
-  let { phase, character, hasPlayed, audioError, onPlay, onContinue }: Props = $props();
+  let { phase, character, showHint, hasPlayed, audioError, onPlay, onContinue }: Props = $props();
   let isPlaying = $derived(phase === 'playing');
   let canPlay = $derived(phase === 'introducing' || phase === 'ready');
   let canContinue = $derived(phase === 'introducing' && hasPlayed);
@@ -24,38 +25,32 @@
 </script>
 
 <section class="introduction">
-  <h1>{m.lesson_meet_character({ character })}</h1>
-  <div class="character" aria-hidden="true">{character}</div>
-  <p class="instruction">{m.lesson_intro_hint()}</p>
+  <h1 class="character" aria-label={m.lesson_meet_character({ character })}>{character}</h1>
+  {#if showHint}<p class="instruction">{m.lesson_intro_hint()}</p>{/if}
 
   <div class="actions">
-    <p class="playback-status" role="status" class:heard={hasPlayed && !isPlaying}>
-      {#if isPlaying}
-        <Volume2 size={18} aria-hidden="true" /> {m.lesson_listening()}
-      {:else if hasPlayed}
-        <Check size={18} aria-hidden="true" /> {m.lesson_intro_heard()}
-      {:else}
-        {m.lesson_intro_listen_first()}
-      {/if}
-    </p>
+    <p class="sr-only" role="status">{hasPlayed && !isPlaying ? m.lesson_intro_heard() : ''}</p>
+    {#if isPlaying}
+      <p class="playback-status"><Volume2 size={18} aria-hidden="true" />{m.lesson_listening()}</p>
+    {/if}
     {#if audioError}
       <p class="audio-error" role="alert">
         <CircleAlert size={18} aria-hidden="true" />
         {m.lesson_feedback_audio_error()}
       </p>
     {/if}
-    <button
-      type="button"
-      class="btn-ghost replay"
-      class:unheard={!hasPlayed}
-      aria-hidden={!hasPlayed}
-      disabled={!hasPlayed || !canPlay}
-      aria-keyshortcuts={canContinue ? 'Space' : undefined}
-      onclick={onPlay}
-    >
-      <RotateCcw size={20} aria-hidden="true" />
-      {m.lesson_hear_character({ character })}
-    </button>
+    {#if hasPlayed}
+      <button
+        type="button"
+        class="btn-ghost replay"
+        disabled={!canPlay}
+        aria-keyshortcuts={canContinue ? 'Space' : undefined}
+        onclick={onPlay}
+      >
+        <RotateCcw size={20} aria-hidden="true" />
+        {m.lesson_hear_character({ character })}
+      </button>
+    {/if}
     <button
       type="button"
       class="btn-primary"
@@ -106,7 +101,7 @@
     flex-direction: column;
     gap: var(--space-3);
     width: 100%;
-    margin-top: var(--space-8);
+    margin-top: var(--space-3);
   }
   .playback-status,
   .audio-error {
@@ -117,9 +112,6 @@
     margin: 0 0 var(--space-2);
     font-size: var(--text-sm);
     color: var(--text-muted);
-  }
-  .heard {
-    color: var(--status-good);
   }
   .audio-error {
     color: var(--status-bad);
@@ -133,12 +125,20 @@
   .replay {
     border: 1px solid var(--border-control);
   }
-  .unheard {
-    visibility: hidden;
-  }
   .btn-primary[aria-disabled='true'] {
     background: var(--bg-inset);
     color: var(--text-muted);
     cursor: wait;
+  }
+  @container (width < 18rem) {
+    .introduction {
+      gap: var(--space-3);
+    }
+    .character {
+      font-size: 3rem;
+    }
+    .actions {
+      margin-top: 0;
+    }
   }
 </style>

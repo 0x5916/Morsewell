@@ -23,6 +23,7 @@ function setup() {
   let active = false;
   let elapsed = 0;
   const engine: AudioEngine = {
+    setVolume: vi.fn(),
     play: vi.fn(() => {
       active = true;
       elapsed = 0;
@@ -196,6 +197,19 @@ describe('practice playback controller', () => {
     h.controller.skip();
     expect(h.state().started).toBe(false);
     expect(h.onEnded).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries a live volume adjustment into the skipped tail without counting a new attempt', async () => {
+    const h = setup();
+    h.controller.play('K M');
+    h.setElapsed(1.1);
+    h.controller.setVolume(0.25);
+    expect(h.engine.setVolume).toHaveBeenCalledWith(0.25);
+    expect(h.engine.play).toHaveBeenCalledTimes(1);
+    h.controller.skip();
+    expect(h.state().plan).toMatchObject({ text: 'M', volume: 0.25 });
+    expect(h.onStart).toHaveBeenCalledTimes(1);
+    await h.controller.dispose();
   });
 
   it('finishes once and disposes without allowing stale events or pending updates', async () => {

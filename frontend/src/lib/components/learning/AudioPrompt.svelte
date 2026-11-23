@@ -12,6 +12,7 @@
     isIntro?: boolean;
     introCharacter?: string;
     introPlayed?: boolean;
+    showIntroHint?: boolean;
     onContinue?: () => void;
     onPlay: () => void;
     onReplay: () => void;
@@ -24,6 +25,7 @@
     isIntro = false,
     introCharacter = '',
     introPlayed = false,
+    showIntroHint = false,
     onContinue = () => {},
     onPlay = () => {},
     onReplay = () => {}
@@ -57,6 +59,7 @@
     {phase}
     character={introCharacter}
     hasPlayed={introPlayed}
+    showHint={showIntroHint}
     {audioError}
     {onPlay}
     {onContinue}

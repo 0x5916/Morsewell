@@ -411,8 +411,12 @@ describe('review timing and recommendation', () => {
           bounds: { source: 'wall-clock-bounded', earliest: recent, latest: recent }
         },
         now
-      ).reason
-    ).toBe('waiting-for-gap');
+      )
+    ).toMatchObject({
+      reason: 'waiting-for-gap',
+      lastExposureAt: recent,
+      actionableAt: add(recent, P.coldGapMs)
+    });
     expect(
       reviewReadiness(
         origin,
@@ -422,8 +426,8 @@ describe('review timing and recommendation', () => {
           bounds: { source: 'wall-clock-bounded', earliest: old, latest: old }
         },
         now
-      ).reason
-    ).toBe('waiting-for-evidence');
+      )
+    ).toMatchObject({ reason: 'waiting-for-evidence', lastExposureAt: null, actionableAt: null });
   });
   function recommendationInput(
     whole = fixture('whole', now, { anchors: true, k: 9, m: 9 }).check

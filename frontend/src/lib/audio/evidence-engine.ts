@@ -53,6 +53,7 @@ export function createEvidenceAudioEngine(options: Options): EvidenceAudioEngine
   const listeners = new Set<(event: AudioEngineEvent) => void>();
   const presentations = new Map<string, EvidencePresentation>();
   let current: EvidencePresentation | null = null;
+  let outputVolume = 1;
   let active = false,
     disposed = false,
     generation = 0;
@@ -106,6 +107,7 @@ export function createEvidenceAudioEngine(options: Options): EvidenceAudioEngine
     queue = pending;
     void pending.catch((error) => {
       if (!disposed && expected === generation) {
+        if (current) current.interrupted = true;
         options.onError?.(error);
         active = false;
         emit('error');
@@ -151,6 +153,7 @@ export function createEvidenceAudioEngine(options: Options): EvidenceAudioEngine
   });
   function play(plan: AudioPlan) {
     if (disposed) return;
+    outputVolume = plan.volume;
     activeEngines.add(stopForOwnerChange);
     const characters = [...new Set([...plan.text.toUpperCase()].filter((ch) => MORSE[ch]))].sort();
     if (!characters.length) {
@@ -220,7 +223,7 @@ export function createEvidenceAudioEngine(options: Options): EvidenceAudioEngine
         }
         presentation.startedAt = clock();
         active = true;
-        base.play(plan);
+        base.play(outputVolume === plan.volume ? plan : { ...plan, volume: outputVolume });
       } catch (error) {
         presentation.interrupted = true;
         await base.stop({ notify: false });
@@ -245,6 +248,10 @@ export function createEvidenceAudioEngine(options: Options): EvidenceAudioEngine
   const stopForOwnerChange = () => stop({ notify: false });
   return {
     play,
+    setVolume(volume) {
+      outputVolume = volume;
+      base.setVolume?.(volume);
+    },
     prepare: () => base.prepare?.() ?? Promise.resolve(),
     pause: async () => {
       if (current && active) current.interrupted = true;

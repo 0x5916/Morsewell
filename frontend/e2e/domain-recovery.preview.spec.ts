@@ -70,7 +70,7 @@ test('recovers a guest lesson from its original top-level origin without transfe
   await button.click();
   await expect(page.getByRole('status').filter({ hasText: 'No new device data' })).toBeVisible();
   await page.goto('https://morsewell.com/en/morse/progress?view=history');
-  await expect(page.getByText('Practice: Lesson 7', { exact: true })).toBeVisible();
+  await expect(page.getByText('Passage practice', { exact: true })).toBeVisible();
   await page.goto('https://opencw.net/seed');
   expect(await page.evaluate(() => localStorage.getItem('refresh_token'))).toBe('legacy-fixture');
   // An unfamiliar source schema must be rejected before a snapshot crosses origins.

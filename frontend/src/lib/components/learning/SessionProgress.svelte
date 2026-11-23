@@ -1,11 +1,12 @@
 <script lang="ts">
   import * as m from '#lib/paraglide/messages.js';
   interface Props {
+    phaseLabel?: string;
     current: number;
     total: number;
   }
 
-  let { current = 1, total = 1 }: Props = $props();
+  let { phaseLabel, current = 1, total = 1 }: Props = $props();
 
   let totalCount = $derived(Number.isFinite(total) ? Math.max(0, Math.trunc(total)) : 0);
   let currentCount = $derived(
@@ -14,27 +15,40 @@
   let percent = $derived(totalCount > 0 ? Math.round((currentCount / totalCount) * 100) : 0);
 </script>
 
-<div
-  class="session-progress"
-  role="progressbar"
-  aria-valuenow={percent}
-  aria-valuemin={0}
-  aria-valuemax={100}
-  aria-label={totalCount > 0
-    ? m.lesson_progress_label({ current: currentCount, total: totalCount })
-    : m.lesson_progress_empty()}
->
-  <div class="progress-bar-track">
-    <div class="progress-bar-fill" style:width={`${percent}%`}></div>
-  </div>
-  <div class="progress-readout">
-    <span class="progress-current">{currentCount}</span>
-    <span class="progress-divider">/</span>
-    <span class="progress-total">{totalCount}</span>
+<div class="progress-context">
+  {#if phaseLabel}<span class="phase-label">{phaseLabel}</span>{/if}
+  <div
+    class="session-progress"
+    role="progressbar"
+    aria-valuenow={percent}
+    aria-valuemin={0}
+    aria-valuemax={100}
+    aria-label={totalCount > 0
+      ? m.lesson_progress_label({ current: currentCount, total: totalCount })
+      : m.lesson_progress_empty()}
+  >
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" style:width={`${percent}%`}></div>
+    </div>
+    <div class="progress-readout">
+      <span class="progress-current">{currentCount}</span>
+      <span class="progress-divider">/</span>
+      <span class="progress-total">{totalCount}</span>
+    </div>
   </div>
 </div>
 
 <style>
+  .progress-context {
+    width: 100%;
+  }
+  .phase-label {
+    display: block;
+    margin-bottom: var(--space-1);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
   .session-progress {
     display: flex;
     align-items: center;

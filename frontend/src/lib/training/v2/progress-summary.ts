@@ -26,6 +26,79 @@ export function sessionOccurredAt(
   return session.occurredAt ?? session.completedAt ?? session.startedAt ?? '';
 }
 
+export function recentConfusionPairs(recent: readonly AttemptEvent[]): ConfusionPair[] {
+  const pairs = new Map<string, ConfusionPair>();
+  for (const attempt of recent) {
+    const expected = attempt.targetCharacter.toUpperCase();
+    const actual = attempt.enteredText.toUpperCase();
+    if (
+      attempt.classification === 'unmeasured' ||
+      attempt.isCorrect ||
+      expected.length !== 1 ||
+      actual.length !== 1 ||
+      expected === actual
+    ) {
+      continue;
+    }
+    const key = JSON.stringify([expected, actual]);
+    const existing = pairs.get(key);
+    if (existing) {
+      existing.confusionCount++;
+      if (Date.parse(attempt.createdAt) > Date.parse(existing.lastOccurredAt)) {
+        existing.lastOccurredAt = attempt.createdAt;
+      }
+    } else {
+      pairs.set(key, { expected, actual, confusionCount: 1, lastOccurredAt: attempt.createdAt });
+    }
+  }
+
+  return [...pairs.values()]
+    .filter((pair) => pair.confusionCount >= 2)
+    .sort(
+      (a, b) =>
+        b.confusionCount - a.confusionCount ||
+        a.expected.localeCompare(b.expected) ||
+        a.actual.localeCompare(b.actual)
+    );
+}
+
+/** Server and older device records store a ratio rounded to three decimals.
+ * Use the exact ratio for display when the underlying guided answers are present. */
+export function historyWithAnswerAccuracy(
+  sessions: readonly HistorySessionRecord[],
+  attempts: readonly AttemptEvent[]
+): HistorySessionRecord[] {
+  const bySession = new Map(
+    sessions.map((session) => [session.id, new Map<string, AttemptEvent>()])
+  );
+  for (const answer of attempts) bySession.get(answer.sessionId)?.set(answer.id, answer);
+  return sessions.map((session) => {
+    const answers = bySession.get(session.id);
+    if (session.mode === 'practice' || session.mode === 'legacy' || !answers?.size) return session;
+    if (session.eventIds) {
+      if (
+        session.eventIds.length !== answers.size ||
+        !session.eventIds.every((id) => answers.has(id))
+      )
+        return session;
+    }
+    const scored = Array.from(answers.values()).filter(
+      (answer) => answer.classification !== 'unmeasured'
+    );
+    if (!scored.length) return session;
+    const accuracy = scored.filter((answer) => answer.isCorrect).length / scored.length;
+    // Older guest rows have no manifest. A conflicting saved ratio can mean
+    // the local answer history is incomplete, so keep that original result.
+    if (
+      !session.eventIds &&
+      session.accuracy != null &&
+      Math.abs(session.accuracy - accuracy) > 0.0005 + Number.EPSILON
+    )
+      return session;
+    return { ...session, accuracy };
+  });
+}
+
 /** Derives display metrics without storage, locale, or UI dependencies. */
 export function summarizeProgress(
   attempts: readonly AttemptEvent[],
@@ -66,42 +139,10 @@ export function summarizeProgress(
     )
     .map((mastery) => mastery.character);
 
-  const pairs = new Map<string, ConfusionPair>();
-  for (const attempt of recent) {
-    const expected = attempt.targetCharacter.toUpperCase();
-    const actual = attempt.enteredText.toUpperCase();
-    if (
-      attempt.classification === 'unmeasured' ||
-      attempt.isCorrect ||
-      expected.length !== 1 ||
-      actual.length !== 1 ||
-      expected === actual
-    ) {
-      continue;
-    }
-    const key = JSON.stringify([expected, actual]);
-    const existing = pairs.get(key);
-    if (existing) {
-      existing.confusionCount++;
-      if (Date.parse(attempt.createdAt) > Date.parse(existing.lastOccurredAt)) {
-        existing.lastOccurredAt = attempt.createdAt;
-      }
-    } else {
-      pairs.set(key, { expected, actual, confusionCount: 1, lastOccurredAt: attempt.createdAt });
-    }
-  }
-
   return {
     masteryMap,
     slowChars,
-    confusionPairs: [...pairs.values()]
-      .filter((pair) => pair.confusionCount >= 2)
-      .sort(
-        (a, b) =>
-          b.confusionCount - a.confusionCount ||
-          a.expected.localeCompare(b.expected) ||
-          a.actual.localeCompare(b.actual)
-      ),
+    confusionPairs: recentConfusionPairs(recent),
     sessionCount: completed.length,
     guidedSessionCount: completed.filter(
       (session) => session.mode !== 'practice' && session.mode !== 'legacy'

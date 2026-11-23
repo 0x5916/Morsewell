@@ -44,7 +44,10 @@ export function resultView(summary: SessionSummary) {
     nextStep,
     lessonCharacters: validStep ? LESSONS[summary.step - 1].split('').join(', ') : '',
     nextCharacters: nextStep ? LESSONS[nextStep - 1].split('').join(', ') : '',
-    accuracyPercent: summary.scoredAttempts > 0 ? Math.round(summary.accuracy * 100) : null,
+    accuracyPercent:
+      summary.scoredAttempts > 0
+        ? Math.round((summary.correctAttempts / summary.scoredAttempts) * 100)
+        : null,
     latencySeconds:
       summary.scoredAttempts > 0 && summary.correctAttempts > 0 && summary.medianLatencyMs !== null
         ? (summary.medianLatencyMs / 1000).toFixed(1)

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { LockKeyhole, Check, Play, RotateCcw, ChevronRight } from '@lucide/svelte';
   import * as m from '#lib/paraglide/messages.js';
 
   export type PathItemStatus =
@@ -15,7 +16,9 @@
   let { step, characters, status, isCurrent = false, onSelect = () => {} }: Props = $props();
 
   let isInteractive = $derived(status !== 'locked');
-  let characterLabel = $derived(characters.split('').join(', '));
+  let characterLabel = $derived(
+    step === 1 ? characters.split('').join(', ') : m.learn_lesson_adds({ characters })
+  );
   let statusLabel = $derived.by(() => {
     switch (status) {
       case 'stable':
@@ -48,7 +51,11 @@
     aria-current={isCurrent ? 'step' : undefined}
   >
     <div class="node-icon status-{status}" aria-hidden="true">
-      {String(step).padStart(2, '0')}
+      {#if status === 'stable'}<Check size={18} />{:else if isCurrent}<Play
+          size={18}
+        />{:else if status === 'review'}<RotateCcw size={18} />{:else}<ChevronRight
+          size={18}
+        />{/if}
     </div>
 
     <div class="node-details">
@@ -62,7 +69,7 @@
 {:else}
   <div class="path-item is-locked">
     <div class="node-icon status-locked" aria-hidden="true">
-      {String(step).padStart(2, '0')}
+      <LockKeyhole size={16} />
     </div>
 
     <div class="node-details">
@@ -70,7 +77,7 @@
         <span class="step-label">{m.learn_path_lesson({ step })}</span>
         <span class="char-label">{characterLabel}</span>
       </div>
-      <span class="status-text status-text-locked">{statusLabel}</span>
+      <span class="sr-only">{statusLabel}</span>
     </div>
   </div>
 {/if}
@@ -184,7 +191,6 @@
     color: var(--learning-review);
   }
 
-  .status-text-locked,
   .status-text-legacy-unverified {
     color: var(--text-muted);
   }

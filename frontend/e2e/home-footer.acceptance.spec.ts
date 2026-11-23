@@ -1,6 +1,24 @@
 import { expect, test, type Locator } from '@playwright/test';
 import { resetAcceptance, resetToHome } from './helpers';
 
+test('Home offers the unfinished lesson to a guest who saved before the first answer', async ({
+  page
+}) => {
+  await resetToHome(page);
+  await page.getByRole('link', { name: 'Start your first lesson' }).click();
+  await expect(page.getByRole('heading', { name: 'Meet K' })).toBeVisible();
+  await page.getByRole('button', { name: 'Save & leave' }).click();
+  await expect(page).toHaveURL(/\/en\/morse\/learn$/);
+  await expect(page.getByRole('link', { name: 'Resume lesson' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start lesson 1', exact: true })).toHaveCount(0);
+  await page.goto('/en');
+  await page.getByRole('link', { name: /Resume lesson/ }).click();
+  await expect(page).toHaveURL(/resume=/);
+  await expect(page.getByRole('heading', { name: 'Session paused' })).toBeVisible();
+  await page.locator('.paused-banner').getByRole('button', { name: 'Resume session' }).click();
+  await expect(page.getByRole('heading', { name: 'Meet K' })).toBeVisible();
+});
+
 test('Profile, Progress and Morse table keep their destination icons across navigation', async ({
   page
 }) => {

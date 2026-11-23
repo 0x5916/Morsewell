@@ -24,6 +24,7 @@ async function fixture() {
       active = true;
     }),
     prepare: vi.fn(async () => {}),
+    setVolume: vi.fn(),
     stop: vi.fn(async () => {
       active = false;
     }),
@@ -56,6 +57,19 @@ async function fixture() {
 }
 const plan = buildAudioPlan('K', { charWpm: 20, effWpm: 12 });
 describe('durable audio exposure', () => {
+  it('applies a volume adjustment made before the guard commits without replaying the passage', async () => {
+    const f = await fixture();
+    f.engine.play(plan);
+    const first = f.engine.presentation();
+    f.engine.setVolume!(0.25);
+    await f.engine.flush();
+    expect(f.base.play).toHaveBeenCalledWith({ ...plan, volume: 0.25 });
+    f.engine.setVolume!(0.5);
+    expect(f.base.setVolume).toHaveBeenLastCalledWith(0.5);
+    expect(f.base.play).toHaveBeenCalledOnce();
+    expect(f.engine.presentation()).toBe(first);
+    await f.engine.dispose();
+  });
   it('preserves silent gesture preparation until the first guarded sound', async () => {
     const f = await fixture();
     await f.base.prepare?.();

@@ -4,7 +4,7 @@ import { MIN_OUTPUT_TAIL, START_LEAD_IN, createWebAudioEngine } from './engine';
 import { buildAudioPlan } from '../training/timing';
 
 type ParamCall = {
-  method: 'setValueAtTime' | 'linearRampToValueAtTime';
+  method: 'setValueAtTime' | 'linearRampToValueAtTime' | 'setTargetAtTime';
   value: number;
   time: number;
 };
@@ -20,6 +20,9 @@ class FakeParam {
 
   linearRampToValueAtTime(value: number, time: number): void {
     this.calls.push({ method: 'linearRampToValueAtTime', value, time });
+  }
+  setTargetAtTime(value: number, time: number): void {
+    this.calls.push({ method: 'setTargetAtTime', value, time });
   }
 }
 
@@ -181,16 +184,37 @@ describe('WebAudioEngine', () => {
     expect(calls[1].value).toBe(0);
     expect(calls[1].time).toBeCloseTo(t0, 12);
     expect(calls[2].method).toBe('linearRampToValueAtTime');
-    expect(calls[2].value).toBe(0.5);
+    expect(calls[2].value).toBe(1);
     expect(calls[2].time).toBeCloseTo(t0 + 0.005, 12);
     expect(calls[3].method).toBe('setValueAtTime');
-    expect(calls[3].value).toBe(0.5);
+    expect(calls[3].value).toBe(1);
     expect(calls[3].time).toBeCloseTo(t0 + 0.055, 12);
     expect(calls[4].method).toBe('linearRampToValueAtTime');
     expect(calls[4].value).toBe(0);
     expect(calls[4].time).toBeCloseTo(t0 + 0.06, 12);
     // Second tone starts after the symbol gap.
     expect(calls[5].time).toBeCloseTo(t0 + 0.12, 12);
+  });
+
+  it('changes output volume without restarting or altering the scheduled tones', () => {
+    const { contexts, engine } = setup();
+    engine.play({ ...plan, volume: 0 });
+    const audio = contexts[0];
+    const [envelope, output] = audio.gains;
+    const schedule = [...envelope.gain.calls];
+    expect(output.gain.calls[0].value).toBe(0);
+    audio.currentTime += 0.6;
+    const position = engine.elapsed();
+    engine.setVolume!(0.65);
+    expect(output.gain.calls.at(-1)).toEqual({
+      method: 'setTargetAtTime',
+      value: 0.65,
+      time: audio.currentTime
+    });
+    expect(audio.oscillators).toHaveLength(1);
+    expect(envelope.gain.calls).toEqual(schedule);
+    expect(engine.elapsed()).toBe(position);
+    expect(engine.isActive()).toBe(true);
   });
 
   it('keeps the context alive after the last tone so a final dot is not clipped', () => {
@@ -274,10 +298,10 @@ describe('WebAudioEngine', () => {
 
       const calls = context.gains[0].gain.calls;
       expect(engine.elapsed()).toBe(0);
-      expect(calls[0]).toEqual({ method: 'setValueAtTime', value: 0, time: 10.25 });
-      expect(calls[1].time).toBeCloseTo(10.25 + START_LEAD_IN + startDelay, 12);
+      expect(calls[0]).toEqual({ method: 'setValueAtTime', value: 0, time: context.currentTime });
+      expect(calls[1].time).toBeCloseTo(context.currentTime + START_LEAD_IN + startDelay, 12);
       expect(context.oscillators[0].stoppedAt).toBeCloseTo(
-        10.25 + START_LEAD_IN + startDelay + plan.totalDuration + MIN_OUTPUT_TAIL,
+        context.currentTime + START_LEAD_IN + startDelay + plan.totalDuration + MIN_OUTPUT_TAIL,
         12
       );
     }
@@ -343,7 +367,8 @@ describe('WebAudioEngine', () => {
     expect(osc.stopTimes[1]).toBeLessThanOrEqual(previous.currentTime);
     expect(osc.connected).toBeNull();
     expect(previous.gains[0].connected).toBeNull();
-    expect(contexts[1].gains[0].connected).toBe(contexts[1].destination);
+    expect(previous.gains[1].connected).toBeNull();
+    expect(contexts[1].gains[1].connected).toBe(contexts[1].destination);
     expect(engine.isActive()).toBe(true);
 
     previous.finishClose();
@@ -413,7 +438,8 @@ describe('WebAudioEngine', () => {
     }
     const latest = contexts.at(-1)!;
     expect(latest.oscillators[0].connected).toBe(latest.gains[0]);
-    expect(latest.gains[0].connected).toBe(latest.destination);
+    expect(latest.gains[0].connected).toBe(latest.gains[1]);
+    expect(latest.gains[1].connected).toBe(latest.destination);
     for (const complete of staleCompletions.slice(0, -1)) complete?.();
     for (const previous of contexts.slice(0, -1)) previous.finishClose();
     await flush();

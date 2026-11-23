@@ -93,6 +93,12 @@ it('downloads every cloud page and only this account’s additional local record
       await reqToPromise(s[name].put({ ownerKey, id, enteredText: id }));
     }
   });
+  const sessions = OWNED_STORES.sessions;
+  await withTransaction(db, sessions, 'readwrite', async (s) => {
+    await reqToPromise(
+      s[sessions].put({ ownerKey: owner, id: 's', mode: 'practice', practiceContext: 'words' })
+    );
+  });
   db.close();
   await downloadAccountData(new AbortController().signal);
   expect(anchor.click).toHaveBeenCalledOnce();
@@ -111,7 +117,10 @@ it('downloads every cloud page and only this account’s additional local record
       attempts: [{ id: 'synced' }],
       sessions: [{ session_id: 's' }],
       evidence: [observed],
-      this_device: { attempts: [{ id: 'pending' }] }
+      this_device: {
+        attempts: [{ id: 'pending' }],
+        sessions: [{ id: 's', practiceContext: 'words' }]
+      }
     }
   });
 });

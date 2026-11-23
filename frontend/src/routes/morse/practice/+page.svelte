@@ -36,7 +36,7 @@
   let departure = $state.raw<ReturnType<typeof createPracticeDeparture> | null>(null);
   let returnFocus = $state<HTMLElement | null>(null);
   let navigationError = $state(false);
-  let confirming = false;
+  let confirming = $state(false);
   let bypassDestination: string | null = null;
   let allowUnload = false;
   let destroyed = false;
@@ -56,13 +56,21 @@
   }
 
   async function saveCopyAndLeave() {
+    const owner = practiceOwner;
+    if (confirming || allowUnload || owner !== getTrainingOwner() || hasPendingResult) return;
+    confirming = true;
     practice?.prepareToLeave();
-    await tick();
-    await copyStore.whenIdle();
-    if (copyStore.saveError || destroyed || allowUnload) return;
-    // Reopen Home in a fresh document after the checkpoint write succeeds.
-    allowUnload = true;
-    window.location.assign(localizedHref('/'));
+    try {
+      await tick();
+      if (owner !== getTrainingOwner()) return;
+      if (!(await copyStore.flushForDeparture()) || destroyed || owner !== getTrainingOwner())
+        return;
+      // Reopen Home in a fresh document after the checkpoint write succeeds.
+      allowUnload = true;
+      window.location.assign(localizedHref('/'));
+    } finally {
+      confirming = false;
+    }
   }
 
   let persistenceStatus = $state<'saving' | 'saved' | 'failed' | null>(null);
@@ -71,6 +79,7 @@
   let recordOwner: string | null = null;
   let practiceOwner = $state('unclaimed');
   const unsavedRecords = new SvelteMap<string, TrainingSessionRecord>();
+  const hasPendingResult = $derived(unsavedRecords.has(practiceOwner));
 
   function recordPractice(attempt: CopyAttempt) {
     if (attemptOwner === null || attemptOwner !== getTrainingOwner()) return;
@@ -92,7 +101,7 @@
       db = await openTrainingDb();
       await createSessionRepository(db, owner).saveSession(record);
       await tick();
-      await copyStore.clearForAttempt(record.id);
+      await copyStore.clearForAttempt(record.id, owner);
       if (unsavedRecords.get(owner) === record) unsavedRecords.delete(owner);
       if (owner === getTrainingOwner() && pendingRecord === record) {
         pendingRecord = null;
@@ -107,7 +116,7 @@
   }
 
   function hasWorkAtRisk() {
-    return unsavedRecords.size > 0 || Boolean(practice?.hasUnfinishedCopy());
+    return hasPendingResult || Boolean(practice?.hasUnfinishedCopy());
   }
 
   beforeNavigate((navigation) => {
@@ -156,14 +165,20 @@
     if (!returnFocus?.isConnected) practice?.focusCopy();
   }
 
-  async function confirmDeparture() {
-    if (!departure || confirming) return;
+  async function confirmDeparture(saveDraft: boolean) {
+    if (!departure || confirming || practiceOwner !== getTrainingOwner()) return;
+    const pending = departure;
     confirming = true;
     navigationError = false;
     try {
-      await copyStore.clear();
-      if (await departure.confirm()) departure = null;
+      if (saveDraft) {
+        await tick();
+        if (departure !== pending || practiceOwner !== getTrainingOwner()) return;
+        if (!(await copyStore.flushForDeparture())) return;
+      } else await copyStore.clear();
+      if (await pending.confirm()) departure = null;
     } catch {
+      if (departure !== pending) return;
       bypassDestination = null;
       allowUnload = false;
       navigationError = true;
@@ -190,10 +205,20 @@
     }
   }
 
+  async function loadEntry() {
+    const owner = getTrainingOwner();
+    const resumeRequested = page.url.searchParams.get('resume') === 'copy';
+    await copyStore.load();
+    if (resumeRequested && !destroyed && owner === getTrainingOwner() && copyStore.saved) {
+      await copyStore.resume(copyStore.saved);
+    }
+  }
+
   // Keep existing character-explorer bookmarks useful after giving the tool its own page.
   onMount(() => {
+    practiceOwner = getTrainingOwner();
     loadDefaults();
-    void copyStore.load();
+    void loadEntry();
     const unsubscribe = subscribeTrainingSync(() => {
       const owner = getTrainingOwner();
       if (practiceOwner === owner) return;
@@ -221,12 +246,19 @@
 
 <div class="practice-page training-page">
   <header class="practice-header">
-    <h1 class="page-title training-title">{m.nav_practice()}</h1>
-    <InfoTip
-      heading
-      label={m.common_tip_label({ topic: m.nav_practice() })}
-      text={m.practice_mastery_notice()}
-    />
+    <div class="practice-title">
+      <h1 class="page-title training-title">{m.nav_practice()}</h1>
+      <InfoTip
+        heading
+        label={m.common_tip_label({ topic: m.nav_practice() })}
+        text={m.practice_mastery_notice()}
+      />
+    </div>
+    {#if !copyStore.loading && !copyStore.blocked && !copyStore.saved && copyStore.hasWork && !hasPendingResult}<button
+        class="btn-ghost"
+        disabled={confirming}
+        onclick={() => void saveCopyAndLeave()}>{m.session_save_leave()}</button
+      >{/if}
   </header>
 
   <TrainingSyncStatus
@@ -248,9 +280,6 @@
       onDiscard={(entry) => void copyStore.discard(entry)}
     />
   {:else if !copyStore.blocked}
-    {#if copyStore.hasWork}<button class="btn-ghost" onclick={() => void saveCopyAndLeave()}
-        >{m.session_save_leave()}</button
-      >{/if}
     {#key practiceOwner}
       <ContinuousCopyPractice
         resume={copyStore.restore}
@@ -271,26 +300,38 @@
 
 <ExitSessionDialog
   isOpen={departure !== null}
-  title={m.practice_leave_title()}
-  description={navigationError
-    ? m.practice_navigation_error()
-    : unsavedRecords.size > 0
-      ? m.lesson_save_discard_hint()
-      : m.practice_leave_description()}
-  confirmLabel={unsavedRecords.size > 0 ? m.lesson_leave_unsaved() : m.practice_discard_leave()}
-  cancelLabel={unsavedRecords.size > 0 ? m.practice_keep_result() : m.practice_keep_copy()}
+  title={hasPendingResult ? m.practice_leave_title() : m.practice_save_draft_question()}
+  description={copyStore.saveError
+    ? m.session_save_error()
+    : navigationError
+      ? m.practice_navigation_error()
+      : hasPendingResult
+        ? m.lesson_save_discard_hint()
+        : m.practice_leave_description()}
+  confirmLabel={hasPendingResult ? m.lesson_leave_unsaved() : m.practice_discard_leave()}
+  cancelLabel={m.practice_keep_result()}
   returnFocusTo={returnFocus}
   onCancel={() => void cancelDeparture()}
-  onConfirm={() => void confirmDeparture()}
+  busy={confirming}
+  onSaveLeave={hasPendingResult ? undefined : () => void confirmDeparture(true)}
+  saveLabel={m.practice_save_continue()}
+  onConfirm={() => void confirmDeparture(false)}
 />
 
 <style>
   .practice-header {
     display: flex;
     align-items: center;
-    gap: 2px;
-    margin-bottom: var(--space-8);
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: min(var(--space-8), 5vw);
     --tip-trigger-size: 48px;
+  }
+  .practice-title {
+    display: flex;
+    align-items: center;
+    gap: 2px;
   }
   .practice-page :global(.saved-sessions) {
     padding: var(--space-6);

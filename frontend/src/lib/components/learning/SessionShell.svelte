@@ -8,6 +8,7 @@
   import * as m from '#lib/paraglide/messages.js';
 
   interface Props {
+    phaseLabel?: string;
     currentPromptIndex: number;
     totalPrompts: number;
     isPaused?: boolean;
@@ -15,6 +16,8 @@
     complete?: boolean;
     review?: boolean;
     assessment?: boolean;
+    checkInterrupted?: boolean;
+    saveWouldInvalidateCheck?: boolean;
     busy?: boolean;
     onExit: () => void;
     onSaveLeave?: () => void;
@@ -27,6 +30,7 @@
   }
 
   let {
+    phaseLabel,
     currentPromptIndex = 0,
     totalPrompts = 1,
     isPaused = false,
@@ -34,6 +38,8 @@
     complete = false,
     review = false,
     assessment = false,
+    checkInterrupted = false,
+    saveWouldInvalidateCheck = false,
     busy = false,
     onExit = () => {},
     onSaveLeave,
@@ -45,11 +51,14 @@
     showExitConfirm = $bindable(false)
   }: Props = $props();
 
+  let confirmCheckSave = $state(false);
+  let saveButton = $state<HTMLButtonElement | null>(null);
   let exitButton = $state<HTMLButtonElement | null>(null);
   let returnFocusTo = $state<HTMLElement | null>(null);
 
   const exitLabel = $derived.by(() => (review ? m.review_exit() : m.lesson_exit()));
   const pauseLabel = $derived.by(() => {
+    if (isPaused && checkInterrupted) return m.check_continue_practice();
     if (isPaused) return assessment ? m.check_resume() : m.lesson_resume();
     return assessment ? m.mixed_pause() : review ? m.review_pause() : m.lesson_pause();
   });
@@ -64,7 +73,7 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    if (showExitConfirm || !acceptsSessionEscape(event)) return;
+    if (showExitConfirm || confirmCheckSave || !acceptsSessionEscape(event)) return;
     event.preventDefault();
     if (assessment && !isPaused && !complete) onPauseToggle();
     else handleExitClick();
@@ -125,7 +134,7 @@
     };
   }}
 >
-  <header class="session-header" class:guided-controls={!assessment && !complete && onSaveLeave}>
+  <header class="session-header" class:with-actions={!complete && onSaveLeave}>
     {#if !assessment}<button
         type="button"
         class="btn-icon"
@@ -140,6 +149,7 @@
 
     <div class="session-progress-container">
       <SessionProgress
+        {phaseLabel}
         current={Math.min(currentPromptIndex + 1, totalPrompts)}
         total={totalPrompts}
       />
@@ -149,7 +159,11 @@
         type="button"
         class="btn-ghost"
         disabled={busy}
-        onclick={onSaveLeave}>{m.session_save_leave()}</button
+        bind:this={saveButton}
+        onclick={() => {
+          if (saveWouldInvalidateCheck) confirmCheckSave = true;
+          else onSaveLeave();
+        }}>{m.session_save_leave()}</button
       >{/if}
     {#if canPause}
       <button
@@ -165,7 +179,7 @@
           <Pause size={18} />
         {/if}
       </button>
-    {:else}
+    {:else if !assessment}
       <div class="header-spacer"></div>
     {/if}
   </header>
@@ -185,15 +199,32 @@
     </div>
   </div>
 
+  {#if assessment && onSaveLeave && !complete}
+    <ExitSessionDialog
+      isOpen={confirmCheckSave}
+      title={m.check_save_title()}
+      description={m.check_save_warning()}
+      confirmLabel={m.session_save_leave()}
+      cancelLabel={m.check_keep_checking()}
+      onConfirm={() => {
+        confirmCheckSave = false;
+        onSaveLeave?.();
+      }}
+      onCancel={() => (confirmCheckSave = false)}
+      returnFocusTo={saveButton}
+    />
+  {/if}
   <ExitSessionDialog
     isOpen={showExitConfirm}
     title={assessment ? m.check_end_title() : review ? m.review_leave_title() : undefined}
     description={assessment
-      ? m.check_end_description()
+      ? saveWouldInvalidateCheck
+        ? m.check_end_checkpoint_warning()
+        : m.check_end_description()
       : review
         ? m.review_leave_description()
         : undefined}
-    onSaveLeave={assessment && onSaveLeave
+    onSaveLeave={onSaveLeave
       ? () => {
           showExitConfirm = false;
           onSaveLeave?.();
@@ -210,13 +241,14 @@
 
 <style>
   .session-shell.assessment {
+    container-type: size;
     position: fixed;
     inset-inline: 0;
     top: 0;
     transform: translateY(var(--session-top, 0px));
     height: var(--session-height, 100dvh);
     min-height: 0;
-    overflow: clip;
+    overflow-y: auto;
   }
   .assessment .session-stage {
     min-height: 0;
@@ -237,15 +269,14 @@
   }
   .assessment .session-stage {
     align-items: flex-start;
-    padding: var(--session-stage-space, calc(var(--space-8) * 3 + var(--space-2))) var(--space-6)
-      var(--space-6);
+    padding: min(var(--session-stage-space, calc(var(--space-8) * 3 + var(--space-2))), 104px)
+      var(--space-6) var(--space-6);
   }
   .assessment .session-header {
     padding: var(--space-5) max(var(--space-6), env(safe-area-inset-right, 0px)) var(--space-5)
       max(var(--space-6), env(safe-area-inset-left, 0px));
   }
   .assessment .session-header .btn-ghost {
-    max-width: 50%;
     white-space: normal;
     overflow-wrap: anywhere;
   }
@@ -288,6 +319,17 @@
   .assessment .session-header :global(.progress-readout) {
     font-size: var(--text-base);
     text-align: left;
+  }
+  /* A short visual viewport must be able to scroll the header away with the prompt. */
+  @container (height < 14rem) {
+    .assessment .session-header {
+      position: static;
+      flex-shrink: 0;
+    }
+    .assessment .session-stage {
+      flex: 1 0 auto;
+      overflow: visible;
+    }
   }
   .session-shell {
     container-type: inline-size;
@@ -372,9 +414,12 @@
   }
 
   @container (width < 18rem) {
-    .session-header:not(.guided-controls) {
+    .session-header:not(.with-actions) {
       display: grid;
       grid-template-columns: 1fr 1fr;
+    }
+    .assessment .session-header:not(.with-actions) {
+      display: flex;
     }
     .session-header button {
       justify-self: start;
@@ -392,20 +437,69 @@
   }
 
   @container (width < 30rem) {
-    .guided-controls {
-      flex-wrap: wrap;
+    :where(.session-shell:not(.assessment)) .with-actions {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
     }
-    .guided-controls .btn-ghost {
+    .with-actions .btn-ghost {
+      white-space: normal;
       margin-inline-start: auto;
       max-width: 100%;
       overflow-wrap: anywhere;
     }
-    .guided-controls .session-progress-container {
+    :where(.session-shell:not(.assessment)) .with-actions .session-progress-container {
       display: block;
       order: 1;
-      flex-basis: 100%;
+      grid-column: 1 / -1;
+      grid-row: 2;
       max-width: none;
       margin: 0;
+    }
+  }
+
+  /* Keep the icon targets at touch size when enlarged text needs the middle column. */
+  @container (width < 18rem) {
+    .assessment .session-stage {
+      padding: min(var(--session-stage-space, var(--space-6)), 24px)
+        max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px))
+        max(16px, env(safe-area-inset-left, 0px));
+    }
+    .session-header.with-actions {
+      grid-template-columns: 48px minmax(0, 1fr) 48px;
+      column-gap: 8px;
+      padding-inline: max(8px, env(safe-area-inset-left, 0px))
+        max(8px, env(safe-area-inset-right, 0px));
+    }
+    .assessment .with-actions {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 48px;
+      padding-block: max(8px, env(safe-area-inset-top, 0px)) 8px;
+    }
+    .assessment .with-actions .session-progress-container {
+      max-width: none;
+      margin: 0;
+    }
+    .assessment .with-actions :global(.session-progress) {
+      flex-direction: row;
+      align-items: center;
+    }
+    .assessment .with-actions :global(.progress-bar-track) {
+      flex: 1;
+    }
+    .with-actions .btn-icon,
+    .with-actions .header-spacer {
+      width: 48px;
+      min-width: 48px;
+      min-height: 48px;
+      height: 48px;
+      padding: 0;
+    }
+    .with-actions .btn-ghost {
+      justify-self: center;
+      margin-inline: 0;
+      min-width: 0;
+      min-height: 48px;
+      padding: var(--space-1) 8px;
     }
   }
 </style>

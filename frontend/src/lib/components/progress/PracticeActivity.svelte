@@ -59,7 +59,12 @@
       >
     </div>
     <div class="metric-block">
-      <span class="metric-label">{m.progress_accuracy()}</span>
+      <span class="metric-label">
+        <span>{m.progress_accuracy()}</span><InfoTip
+          label={m.common_tip_label({ topic: m.progress_accuracy() })}
+          text={m.progress_accuracy_hint()}
+        /></span
+      >
       <div
         class={`accuracy-measure ${accuracyPercent === null ? '' : accuracyClass(accuracyPercent / 100)}`}
       >
@@ -87,7 +92,7 @@
 <style>
   .activity-ledger-card.progress-page {
     max-width: none;
-    padding: var(--space-6);
+    padding: min(var(--space-6), 24px);
     background: var(--bg-surface);
     border-radius: var(--radius-lg);
   }
@@ -111,6 +116,7 @@
   }
 
   .activity-ledger-card {
+    container: activity / inline-size;
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
@@ -244,7 +250,7 @@
     color: var(--text-muted);
   }
 
-  @media (max-width: 639px) {
+  @container activity (width < 36rem) {
     .ledger-metrics {
       grid-template-columns: 1fr;
       gap: var(--space-4);
@@ -253,18 +259,19 @@
       display: grid;
       grid-row: auto;
       grid-template-rows: auto;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr) fit-content(40%);
       gap: var(--space-2) var(--space-3);
       text-align: start;
       align-items: center;
       justify-items: stretch;
     }
-    .metric-val {
+    .metric-block > .metric-val,
+    .accuracy-measure {
+      justify-self: end;
       text-align: end;
-      overflow-wrap: anywhere;
     }
-    .session-metric {
-      grid-template-columns: minmax(0, 1fr) auto;
+    .metric-val:not(.is-unmeasured) {
+      white-space: nowrap;
     }
     .metric-label {
       justify-content: flex-start;
@@ -273,7 +280,24 @@
       display: flex;
     }
     .accuracy-measure {
-      justify-self: end;
+      width: fit-content;
+      min-width: 4ch;
+    }
+  }
+
+  @container activity (width < 15rem) {
+    .metric-block {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0;
+    }
+    .metric-label {
+      min-height: 0;
+      overflow-wrap: anywhere;
+    }
+    .metric-block > .metric-val,
+    .accuracy-measure {
+      justify-self: start;
+      text-align: start;
     }
   }
 </style>

@@ -10,7 +10,7 @@ const TARGET_EPSILON = 0.01;
 test('keyboard-only practice starts, checks, and closes the result', async ({ page }) => {
   await resetToHome(page);
   await page.goto('/morse/practice');
-  const start = page.getByRole('button', { name: 'Start practice' });
+  const start = page.getByRole('button', { name: 'Play passage' });
   await expect(start).toBeVisible();
   await start.focus();
   await page.keyboard.press('Space');
@@ -18,7 +18,7 @@ test('keyboard-only practice starts, checks, and closes the result', async ({ pa
   const answer = page.getByRole('textbox', { name: 'Your copy' });
   await expect(answer).toBeFocused();
   await page.keyboard.type('KM');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('Control+Enter');
   const dialog = page.getByRole('dialog', { name: 'Practice results' });
   const close = dialog.getByRole('button', { name: 'Close', exact: true });
   const finish = dialog.getByRole('button', { name: 'Finish for today' });
@@ -62,7 +62,7 @@ for (const { input, viewport, colorScheme } of [
       });
 
       const answer = await startAndType(page);
-      await answer.press('Enter');
+      await answer.press('Control+Enter');
       const dialog = page.getByRole('dialog', { name: 'Practice results' });
       await expect(dialog.getByText('Practice result saved on this device')).toBeVisible();
 
@@ -133,7 +133,7 @@ async function measure(locator: Locator) {
   });
 }
 
-test('Start practice matches Start lesson on mobile and desktop', async ({ page }) => {
+test('Play passage matches Start lesson on mobile and desktop', async ({ page }) => {
   await resetToHome(page);
   for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 844 });
@@ -146,7 +146,7 @@ test('Start practice matches Start lesson on mobile and desktop', async ({ page 
     }
 
     await page.goto('/en/morse/practice');
-    const start = await measure(page.getByRole('button', { name: 'Start practice' }));
+    const start = await measure(page.getByRole('button', { name: 'Play passage' }));
     expect(start.fontSize).toBe(lesson.fontSize);
     expect(start.height).toBeCloseTo(lesson.height);
     if (width === 390) {
@@ -230,7 +230,7 @@ for (const width of [320, 390, 1280]) {
     const routes = [
       ['/en', page.getByRole('link', { name: 'Start your first lesson', exact: true })],
       ['/en/morse/learn', page.getByText(/lessons unlocked$/)],
-      ['/en/morse/practice', page.getByRole('button', { name: 'Start practice', exact: true })],
+      ['/en/morse/practice', page.getByRole('button', { name: 'Play passage', exact: true })],
       ['/en/morse/progress', page.getByRole('heading', { name: 'No training history yet' })]
     ] as const;
 

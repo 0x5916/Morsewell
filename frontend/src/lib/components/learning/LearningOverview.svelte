@@ -1,9 +1,15 @@
 <script lang="ts">
-  import { armCheckStart } from '#lib/check-start-intent.ts';
+  import { prepareCheckLink } from '#lib/check-start-intent.ts';
   import { LEARNING_POLICY } from '#lib/training/learning-policy/policy.ts';
   import type { LearningCharacter, LearningSnapshot } from '../../data/learning-snapshot';
   import { learningRecommendationHref } from '../../data/learning-snapshot';
-  import { recommendationTitle, criterionLabel } from './recommendation-copy';
+  import {
+    recommendationTitle,
+    recommendationHint,
+    criterionLabel,
+    mixedGapText,
+    mixedCriteriaText
+  } from './recommendation-copy';
   import { isRecommendationLessonLocked } from '#lib/training/v2/lesson-access.ts';
   import { localizedHref } from '#lib/i18n.svelte.ts';
   import { formatDateTime } from '#lib/format.ts';
@@ -14,6 +20,7 @@
     characterRecords = [],
     details = false,
     compact = false,
+    secondary = false,
     progressView = null,
     unlockedLesson = null,
     onAction
@@ -22,6 +29,7 @@
     characterRecords?: LearningCharacter[];
     details?: boolean;
     compact?: boolean;
+    secondary?: boolean;
     progressView?: string | null;
     /** Guided-course unlock boundary; learning evidence cannot exceed it. */
     unlockedLesson?: number | null;
@@ -66,27 +74,25 @@
   const checkTargets = $derived(
     new URL(nextHref, 'https://local.invalid').searchParams.get('check')
   );
-  const promptCount = $derived(
-    checkTargets
-      ? checkTargets.length * LEARNING_POLICY.opportunitiesPerTarget +
-          (snapshot.knownCharacters.some((c) => !checkTargets.includes(c))
-            ? LEARNING_POLICY.anchorCount
-            : 0)
-      : 0
+  const hasCompanions = $derived(
+    checkTargets && snapshot.knownCharacters.some((c) => !checkTargets?.includes(c))
   );
-  function prepareCheck(event: MouseEvent) {
-    if (
-      (event.currentTarget as HTMLAnchorElement).search.includes('check=') &&
-      event.button === 0 &&
-      !event.metaKey &&
-      !event.ctrlKey &&
-      !event.shiftKey &&
-      !event.altKey
-    )
-      armCheckStart(
-        (event.currentTarget as HTMLAnchorElement).pathname +
-          (event.currentTarget as HTMLAnchorElement).search
-      );
+  const promptCount = $derived(
+    (checkTargets?.length ?? 0) * LEARNING_POLICY.opportunitiesPerTarget +
+      (hasCompanions ? LEARNING_POLICY.anchorCount : 0)
+  );
+  function characterCheckLabel(character: LearningCharacter): string {
+    if (character.current.criterion !== 'insufficient')
+      return criterionLabel(character.current.criterion);
+    if (snapshot.coverage === 'partial') return m.learning_check_sync();
+    switch (character.current.freshness) {
+      case 'stale':
+        return m.learning_check_old({ days: LEARNING_POLICY.freshnessMs / 86_400_000 });
+      case 'none':
+        return m.learning_check_none();
+      default:
+        return m.learning_check_incomplete();
+    }
   }
   const filtered = $derived(
     characterRecords.filter(
@@ -105,41 +111,56 @@
         : m.learning_provisional();
 </script>
 
-<section class="learning-overview" class:progress-evidence={details}>
+<section class="learning-overview" class:progress-evidence={details} class:secondary>
   {#if progressView !== 'characters' && progressView !== 'history'}<div class="recommendation">
       {#if !compact}<header>
           <h2>
             {checkTargets
-              ? m.mixed_targets({ characters: checkTargets.split('').join(', ') })
+              ? (secondary ? m.optional_check_targets : m.mixed_targets)({
+                  characters: checkTargets.split('').join(', ')
+                })
               : m.learning_overview_heading()}
           </h2>
           <p>
             {checkTargets
               ? m.check_entry_facts({ count: promptCount, speed: snapshot.profile.charWpm })
-              : m.learning_overview_profile({ speed: snapshot.profile.charWpm })}
+              : recommendationHint(primary, snapshot.profile.charWpm)}
           </p>
-        </header>{/if}
+          {#if checkTargets}<p>{m.check_first_credit()}</p>{/if}
+        </header>{:else if checkTargets}<div>
+          <p>{m.check_entry_facts({ count: promptCount, speed: snapshot.profile.charWpm })}</p>
+          <p>{m.check_first_credit()}</p>
+        </div>{/if}
       {#if recommendationLocked}
         <p role="status">
           {m.learning_next_locked({ step: primary.lesson ?? 1 })}
         </p>
-        <a class="btn-primary" href={localizedHref('/morse/learn')}>{m.progress_return_course()}</a>
-      {:else if onAction}<button type="button" class="btn-primary" onclick={onAction}
-          >{recommendationTitle(primary)}</button
+        <a class={secondary ? 'btn-ghost' : 'btn-primary'} href={localizedHref('/morse/learn')}
+          >{m.progress_return_course()}</a
+        >
+      {:else if onAction}<button
+          type="button"
+          class={secondary ? 'btn-ghost' : 'btn-primary'}
+          onclick={onAction}
+          >{checkTargets ? m.check_begin_explicit() : recommendationTitle(primary)}</button
         >
       {:else}
-        <a class="btn-primary" href={nextHref} onclick={prepareCheck}
-          >{checkTargets
-            ? m.mixed_targets({ characters: checkTargets.split('').join(', ') })
-            : recommendationTitle(primary)}</a
+        <a
+          class={secondary ? 'btn-ghost' : 'btn-primary'}
+          href={nextHref}
+          onclick={prepareCheckLink}
+          >{checkTargets ? m.check_begin_explicit() : recommendationTitle(primary)}</a
         >
       {/if}
     </div>
-    {#if checkTargets}<details class="ui-disclosure">
+    {#if checkTargets && !compact}<details class="ui-disclosure">
         <summary>{m.check_how()}</summary>
         <p>{m.mixed_setup({ count: promptCount })}</p>
+        {#if hasCompanions}<p>
+            {m.check_extra_prompts({ count: LEARNING_POLICY.anchorCount })}
+          </p>{/if}
         <p>{m.mixed_support_hint()}</p>
-        <p>{m.mixed_gap_hint()}</p>
+        <p>{mixedGapText()}</p>
       </details>{/if}
   {/if}
   {#if !compact && !progressView && snapshot.coverage === 'partial'}<p role="status">
@@ -152,8 +173,18 @@
     <div class="character-content" hidden={progressView !== null && progressView !== 'characters'}>
       <details class="ui-disclosure">
         <summary>{m.check_how()}</summary>
+        <p>
+          {m.check_current_rule({
+            speed: snapshot.profile.charWpm,
+            days: LEARNING_POLICY.freshnessMs / 86_400_000,
+            correct: LEARNING_POLICY.successesPerCheck,
+            total: LEARNING_POLICY.opportunitiesPerTarget
+          })}
+        </p>
         <p>{m.mixed_support_hint()}</p>
-        <p>{m.mixed_gap_hint()}</p>
+        <p>{mixedCriteriaText()}</p>
+        <p>{mixedGapText()}</p>
+        <p>{m.learning_review_gap({ hours: LEARNING_POLICY.coldGapMs / 3_600_000 })}</p>
       </details>
       <h2>{m.progress_character_records()}</h2>
       <p class="record-count" aria-live="polite">
@@ -216,7 +247,7 @@
                 <details class="character-evidence">
                   <summary>
                     <strong>{character.character}</strong>
-                    <span>{criterionLabel(character.current.criterion)}</span>
+                    <span>{characterCheckLabel(character)}</span>
                     <ChevronDown size={20} aria-hidden="true" />
                   </summary>
                   <div class="evidence-details">
@@ -242,22 +273,49 @@
                       >
                         {m.learning_claim_uncertain()}
                       </p>{/if}
-                    {#if character.review}<p>
+                    {#if character.review && snapshot.coverage !== 'partial'}
+                      {#if character.review.lastExposureAt}
+                        <p>
+                          {m.learning_last_heard({
+                            character: character.character,
+                            date: formatDateTime(character.review.lastExposureAt)
+                          })}
+                        </p>
+                      {/if}
+                      <p>
                         {character.review.ready
                           ? m.learning_review_due()
-                          : character.review.reason === 'upcoming'
+                          : character.review.actionableAt
                             ? m.learning_review_on({
-                                date: formatDateTime(character.review.dueAt)
+                                date: formatDateTime(character.review.actionableAt)
                               })
                             : m.learning_review_wait()}
-                      </p>{/if}
-                    <a
-                      class="link"
-                      onclick={prepareCheck}
-                      href={localizedHref(
-                        `/morse/learn/session?check=${encodeURIComponent(character.character)}`
-                      )}>{m.learning_check({ character: character.character })}</a
-                    >
+                      </p>
+                    {/if}
+                    {#if snapshot.knownCharacters.length >= 2 && snapshot.knownCharacters.includes(character.character)}
+                      <p>
+                        {m.check_character_plan({
+                          targets: LEARNING_POLICY.opportunitiesPerTarget,
+                          character: character.character,
+                          other: LEARNING_POLICY.anchorCount
+                        })}
+                      </p>
+                      <p>{m.check_first_credit()}</p>
+                      <a
+                        class="link"
+                        onclick={prepareCheckLink}
+                        href={localizedHref(
+                          `/morse/learn/session?check=${encodeURIComponent(character.character)}`
+                        )}>{m.learning_check({ character: character.character })}</a
+                      >
+                    {:else}
+                      <p>
+                        {snapshot.knownCharacters.includes(character.character)
+                          ? m.learning_check_needs_partner()
+                          : m.learning_check_needs_target({ character: character.character })}
+                      </p>
+                      <a class="link" href={localizedHref('/morse')}>{m.morse_title()}</a>
+                    {/if}
                   </div>
                 </details>
               </li>
@@ -301,7 +359,7 @@
     width: 100%;
   }
   .character-scroll ul {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .character-filter {
     display: grid;
@@ -315,13 +373,14 @@
   }
   .character-filter select {
     min-height: 48px;
+    min-width: 0;
   }
   .character-scroll {
     width: 100%;
   }
   @media (min-width: 960px) and (min-height: 700px) {
     .character-scroll {
-      max-height: min(55dvh, calc(100dvh - 24rem));
+      max-height: min(55dvh, max(12rem, calc(100dvh - 24rem)));
       overflow-y: auto;
       scrollbar-gutter: stable;
       padding-right: var(--space-2);
@@ -342,10 +401,13 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-6);
-    padding: var(--space-6);
+    padding: min(var(--space-6), 24px);
     width: 100%;
     background: var(--bg-surface);
     border-radius: var(--radius-lg);
+  }
+  .secondary .recommendation h2 {
+    font-size: var(--text-lg);
   }
   .progress-evidence header p {
     font-size: var(--text-sm);
@@ -363,9 +425,9 @@
   .character-evidence summary {
     display: flex;
     align-items: center;
-    gap: var(--space-4);
+    gap: min(var(--space-4), 16px);
     min-height: 4.5rem;
-    padding: var(--space-4);
+    padding: min(var(--space-4), 16px);
     cursor: pointer;
     list-style: none;
   }
@@ -381,18 +443,19 @@
     transform: rotate(180deg);
   }
   .character-evidence summary strong {
-    width: 2rem;
+    min-width: min(2rem, 32px);
     flex-shrink: 0;
     font-size: var(--text-2xl);
   }
   .character-evidence summary span {
+    min-width: 0;
     font-size: var(--text-sm);
     color: var(--text-secondary);
   }
   .evidence-details {
     display: grid;
     gap: var(--space-3);
-    padding: 0 var(--space-4) var(--space-4);
+    padding: 0 min(var(--space-4), 16px) min(var(--space-4), 16px);
   }
   @media (max-width: 639px) {
     .progress-evidence .recommendation {
@@ -463,6 +526,7 @@
   }
   dl div {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     gap: var(--space-4);
   }

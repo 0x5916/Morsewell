@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { consumeCheckStart } from '#lib/check-start-intent.ts';
+  import { armCheckStart, consumeCheckStart } from '#lib/check-start-intent.ts';
+  import { mixedGapText } from '#lib/components/learning/recommendation-copy.ts';
   import {
     loadCheckpoint,
     saveCheckpoint,
@@ -22,7 +23,6 @@
   import { createEvidenceSessionRepositories } from '#lib/data/evidence-session.ts';
   import {
     activeLearningProfile,
-    loadLearningSnapshot,
     learningRecommendationHref,
     returnScreeningTargets
   } from '#lib/data/learning-snapshot.ts';
@@ -36,7 +36,7 @@
   } from '#lib/training/v2/lesson-access.ts';
   import { createSessionId } from '#lib/training/v2/ids.ts';
   import MixedCheckPanel from '#lib/components/learning/MixedCheckPanel.svelte';
-  import { createLearningView } from '#lib/learning-view.svelte.ts';
+  import { createLearningView, loadOwnerLearningSnapshot } from '#lib/learning-view.svelte.ts';
   import { learningSyncState } from '#lib/learning-sync.svelte.ts';
   import { openTrainingDb } from '#lib/data/training-db.ts';
   import { createAttemptRepository } from '#lib/data/attempt-repository.ts';
@@ -71,6 +71,30 @@
   );
   const checkValue = $derived(intent.check);
   let controller = $state<GuidedSessionController | null>(null);
+  let readCheckInterruption = $state.raw<(() => boolean) | undefined>();
+  // Playback and pause transitions replace the current state after the audio evidence changes.
+  const checkInterrupted = $derived(
+    Boolean(mixedPlan && controller?.currentPrompt && readCheckInterruption?.())
+  );
+  const saveWouldInvalidateCheck = $derived(
+    Boolean(
+      mixedPlan &&
+      !checkInterrupted &&
+      controller?.state.promptStarted &&
+      !['feedback', 'complete', 'abandoned'].includes(controller.phase)
+    )
+  );
+  const unloadNeedsConfirmation = $derived(
+    Boolean(controller && (controller.persistenceStatus !== 'saved' || saveWouldInvalidateCheck))
+  );
+  const checkResultStatus = $derived.by(() => {
+    const entry = learning.snapshot?.history.find(
+      (item) => item.id === controller?.state.sessionId
+    );
+    if (entry?.evidenceStatus === 'rejected') return 'rejected';
+    if (entry?.recordedStatus === 'in-progress') return null;
+    return entry?.status === 'completed' || entry?.status === 'incomplete' ? entry.status : null;
+  });
   let db: IDBDatabase | null = null;
   let initializing = $state(true);
   let initializationError = $state(false);
@@ -78,6 +102,7 @@
   let guidedUnlockedStep = $state(1);
   let leaving = $state(false);
   let pendingAction = $state<'exit' | 'repeat' | 'next' | null>(null);
+  let pendingSaveLeave = false;
   let pendingNavigation = $state.raw<PendingSessionNavigation | null>(null);
   let bypassDestination: string | null = null;
   let allowUnload = false;
@@ -94,6 +119,13 @@
   let reviewUnavailable = $state(false);
   let reviewRound = $state(0);
   const reviewValue = $derived(intent.review);
+  const previousPrompt = $derived(controller?.state.prompts[controller.currentPromptIndex - 1]);
+  const introduceFormat = $derived(
+    controller?.currentPrompt?.spec.kind !== previousPrompt?.spec.kind ||
+      controller?.currentPrompt?.spec.expectedText.length !==
+        previousPrompt?.spec.expectedText.length ||
+      controller?.currentPrompt?.isScored !== previousPrompt?.isScored
+  );
   let resumeAfterExit = $state(false);
   let showCheckExitConfirm = $state(false);
   let sessionOwner: string | null = null;
@@ -145,9 +177,10 @@
       invalid
     } = intent;
     mixedPlan = null;
+    readCheckInterruption = undefined;
     reviewPlan = null;
     reviewUnavailable = invalid;
-    beginReview ||= requestedCheck !== null;
+    beginReview ||= requestedCheck !== null && Boolean(entryAudio);
     reviewStarted = beginReview;
     answerDraft = '';
     const owner = getTrainingOwner();
@@ -165,6 +198,7 @@
     initializationError = false;
     lockedLesson = null;
     pendingAction = null;
+    pendingSaveLeave = false;
     pendingNavigation = null;
     resumeAfterExit = false;
     showCheckExitConfirm = false;
@@ -185,9 +219,6 @@
       const allAttempts = await attemptRepo.getAttemptsByTimeRange(
         '0001-01-01T00:00:00.000Z',
         nowIso
-      );
-      const recentAttempts = allAttempts.filter(
-        (attempt) => Date.parse(attempt.createdAt) >= Date.now() - 30 * 86400000
       );
       if (!current()) {
         database.close();
@@ -268,6 +299,7 @@
           sessionRepo = adapted.sessionRepo;
           captureFirst = adapted.captureFirst;
           firstPresentation = adapted.firstPresentation;
+          readCheckInterruption = adapted.hasInterruptedFirstListen;
         } else {
           const existing = await sessionRepo.getSession(id);
           if (existing && existing.status !== 'in-progress') {
@@ -282,7 +314,7 @@
           });
         }
       } else if (reviewRequest || checkTargets) {
-        const snapshot = await loadLearningSnapshot({ ownerKey: owner });
+        const snapshot = await loadOwnerLearningSnapshot(owner);
         if (!current()) {
           database.close();
           return;
@@ -379,6 +411,7 @@
         sessionRepo = local.sessionRepo;
         captureFirst = local.captureFirst;
         firstPresentation = local.firstPresentation;
+        readCheckInterruption = local.hasInterruptedFirstListen;
       } else {
         pendingLease = await claimSession(owner, id);
         audio = createEvidenceAudioEngine({
@@ -439,7 +472,7 @@
         onPromptPlayback: captureFirst,
         attemptRepo,
         sessionRepo,
-        allHistoricalAttempts: recentAttempts
+        allHistoricalAttempts: allAttempts
       });
       if (pendingLease) {
         sessionLeases.set(ctrl, pendingLease);
@@ -564,7 +597,7 @@
     if (!ctrl) return;
     if (!navigation.to) {
       // A tab close/reload cannot be replayed asynchronously; the browser owns this decision.
-      if (ctrl.persistenceStatus !== 'saved') navigation.cancel();
+      if (unloadNeedsConfirmation) navigation.cancel();
       return;
     }
     const source = navigation.from?.url ?? page.url;
@@ -591,7 +624,7 @@
     };
     pendingAction = null;
     pendingNavigation = pending;
-    if (mixedPlan && !['complete', 'abandoned'].includes(ctrl.phase)) {
+    if (!['complete', 'abandoned'].includes(ctrl.phase)) {
       handleExitRequest();
       showCheckExitConfirm = true;
     } else void continueNavigation(pending);
@@ -602,16 +635,24 @@
       owner = getTrainingOwner();
     if (!ctrl || leaving) return;
     leaving = true;
+    pendingSaveLeave = true;
+    const navigation = pendingNavigation;
     ctrl.suspend();
     try {
       if (!(await ctrl.flushPersistence()) || destroyed || owner !== getTrainingOwner()) return;
+      await navigation?.restored;
+      if (destroyed || owner !== getTrainingOwner()) return;
       suspendedControllers.add(ctrl);
       await releaseSession(ctrl, db);
       db = null;
       if (destroyed || owner !== getTrainingOwner()) return;
       controller = null;
-      bypassDestination = new URL(localizedHref('/morse/learn'), page.url.href).href;
-      await goto(bypassDestination);
+      pendingSaveLeave = false;
+      if (navigation) await navigation.resume();
+      else {
+        bypassDestination = new URL(localizedHref('/morse/learn'), page.url.href).href;
+        await goto(bypassDestination);
+      }
     } finally {
       leaving = false;
     }
@@ -636,7 +677,7 @@
       controller = null;
       if (action === 'repeat') {
         if (reviewPlan) reviewRound += 1;
-        await startSession(Boolean(reviewPlan), false);
+        await startSession(Boolean(reviewPlan || mixedPlan), false);
       } else {
         const destination = localizedHref(
           action === 'next'
@@ -658,13 +699,14 @@
     const owner = getTrainingOwner();
     if (await ctrl?.retryPersistence()) {
       if (destroyed || owner !== getTrainingOwner() || ctrl !== controller) return;
-      if (pendingNavigation) await continueNavigation(pendingNavigation);
+      if (pendingSaveLeave) await saveAndLeave();
+      else if (pendingNavigation) await continueNavigation(pendingNavigation);
       else if (pendingAction) await leaveSession(pendingAction);
     }
   }
 
   function handleBeforeUnload(event: BeforeUnloadEvent) {
-    if (!allowUnload && controller && controller.persistenceStatus !== 'saved') {
+    if (!allowUnload && unloadNeedsConfirmation) {
       event.preventDefault();
       event.returnValue = '';
     }
@@ -687,8 +729,10 @@
 
   function handleExitRequest() {
     if (!controller) return;
-    resumeAfterExit = ['introducing', 'ready', 'playing', 'answering'].includes(controller.phase);
-    controller.pause();
+    // Opening a confirmation must not interrupt a check's first presentation.
+    resumeAfterExit =
+      !mixedPlan && ['introducing', 'ready', 'playing', 'answering'].includes(controller.phase);
+    if (resumeAfterExit) controller.pause();
   }
 
   function handleExitCancel() {
@@ -708,8 +752,19 @@
   }
 
   function handleContinue() {
-    if (!controller) return;
-    if (controller.continue()) answerDraft = '';
+    if (!controller || leaving) return;
+    const playNext = controller.canPlayNextSound;
+    if (controller.continue()) {
+      answerDraft = '';
+      if (playNext && !document.hidden) controller.play();
+    }
+  }
+
+  function beginCheck(restart = false) {
+    if (leaving || initializing) return;
+    armCheckStart(page.url.pathname + page.url.search);
+    if (restart) void leaveSession('repeat');
+    else void startSession(true);
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -747,25 +802,33 @@
 </svelte:head>
 
 {#if reviewUnavailable}
-  <main class="loading-stage">
+  <div class="loading-stage">
     <div class="recovery-panel">
-      <h1>{m.review_history_heading()}</h1>
-      <p>{m.review_unavailable()}</p>
+      <h1>{checkValue !== null ? m.mixed_title() : m.review_unavailable_title()}</h1>
+      {#if intent.invalid}<p>{m.review_unavailable()}</p>
+      {:else if checkValue !== null}<p>{m.mixed_needs_characters()}</p>
+      {:else if intent.reviewRequest?.purpose === 'return-screening'}<p>
+          {m.screening_needs_proficiency()}
+        </p>
+      {:else}<p>{m.coaching_needs_characters()}</p>{/if}
       <a class="btn-primary" href={localizedHref('/morse/learn')}>{m.home_all_lessons()}</a>
-      <a class="btn-ghost" href={localizedHref('/morse')}>{m.review_unavailable_familiarize()}</a>
+      {#if !intent.invalid && intent.reviewRequest?.purpose !== 'return-screening'}<a
+          class="btn-ghost"
+          href={localizedHref('/morse')}>{m.review_unavailable_familiarize()}</a
+        >{/if}
     </div>
-  </main>
+  </div>
 {:else if lockedLesson}
-  <main class="loading-stage">
+  <div class="loading-stage">
     <div class="recovery-panel" role="alert">
       <Lock size={24} aria-hidden="true" />
       <h1>{m.lesson_locked_title({ step: lockedLesson.step })}</h1>
       <p>{m.lesson_locked_description()}</p>
       <a class="btn-primary" href={localizedHref('/morse/learn')}>{m.progress_return_course()}</a>
     </div>
-  </main>
+  </div>
 {:else if initializationError}
-  <main class="loading-stage">
+  <div class="loading-stage">
     <div class="recovery-panel" role="alert">
       <AlertCircle size={24} aria-hidden="true" />
       <p>{resumeValue ? m.session_resume_error() : m.lesson_initialization_error()}</p>
@@ -774,16 +837,28 @@
         >{m.lesson_retry_start()}</button
       >
     </div>
-  </main>
+  </div>
 {:else if reviewPlan && !reviewStarted && !initializing}
-  <main class="loading-stage review-setup">
+  <div class="loading-stage review-setup">
     <ReviewPanel
       plan={reviewPlan}
       onStart={() => startSession(true)}
       onRepeat={handleRepeatLesson}
       onFinish={handleExit}
     />
-  </main>
+  </div>
+{:else if mixedPlan && !reviewStarted && !initializing}
+  <div class="loading-stage review-setup">
+    <section class="mixed-setup">
+      <h1>{m.mixed_targets({ characters: mixedPlan.plan.targets.join(', ') })}</h1>
+      <p>{m.mixed_setup({ count: mixedPlan.prompts.length })}</p>
+      <p>{m.mixed_support_hint()}</p>
+      <button type="button" class="btn-primary" onclick={() => beginCheck()}
+        >{m.check_begin_explicit()}</button
+      >
+      <a class="link" href={localizedHref('/morse/learn')}>{m.progress_return_course()}</a>
+    </section>
+  </div>
 {:else if !browser || initializing || !controller}
   <div class="loading-stage" role="status" aria-label={m.lesson_loading()}>
     <div class="skeleton loading-box"></div>
@@ -842,12 +917,21 @@
       <summary>{m.check_how()}</summary>
       <p>{m.mixed_setup({ count: mixedPlan?.prompts.length ?? 0 })}</p>
       <p>{m.mixed_support_hint()}</p>
-      <p>{m.mixed_gap_hint()}</p>
+      <p>{mixedGapText()}</p>
     </details>{/snippet}
 
   <SessionShell
+    phaseLabel={controller.phase !== 'complete' && reviewPlan
+      ? reviewPlan.purpose === 'return-screening'
+        ? m.phase_return_round()
+        : m.phase_coaching()
+      : controller.currentPrompt?.spec.kind === 'unscored-match'
+        ? m.phase_warmup()
+        : undefined}
     review={Boolean(reviewPlan || mixedPlan)}
     assessment={Boolean(mixedPlan)}
+    {checkInterrupted}
+    {saveWouldInvalidateCheck}
     currentPromptIndex={controller.currentPromptIndex}
     totalPrompts={controller.totalPrompts}
     isPaused={controller.phase === 'paused'}
@@ -875,10 +959,28 @@
         >
           {mixedPlan ? m.check_paused() : m.lesson_paused()}
         </h1>
-        <p>{m.lesson_pause_hint()}</p>
+        <p>
+          {checkInterrupted
+            ? m.check_interrupted_hint()
+            : reviewPlan
+              ? m.review_unmeasured()
+              : m.lesson_pause_hint()}
+        </p>
         <button type="button" class="btn-primary" onclick={handlePauseToggle}>
-          {mixedPlan ? m.check_resume() : m.lesson_resume()}
+          {checkInterrupted
+            ? m.check_continue_practice()
+            : mixedPlan
+              ? m.check_resume()
+              : m.lesson_resume()}
         </button>
+        {#if checkInterrupted}
+          <button
+            type="button"
+            class="btn-ghost"
+            disabled={leaving}
+            onclick={() => beginCheck(true)}>{m.check_restart()}</button
+          >
+        {/if}
       </div>
     {:else if controller.phase === 'complete' && controller.summary}
       {#if mixedPlan}<MixedCheckPanel
@@ -890,8 +992,11 @@
             learning.snapshot.recommendation.primary,
             learning.snapshot.knownCharacters
           ) === `/morse/learn/session?check=${checkValue}`
-            ? () => startSession(true, false)
+            ? () => beginCheck(true)
             : undefined}
+          finalStatus={checkResultStatus}
+          loadFailed={learning.failed}
+          onRetry={() => void learning.refresh()}
           result={learning.snapshot?.checks.find((c) => c.id === controller?.state.sessionId) ??
             null}
           busy={leaving || controller.persistenceStatus === 'saving'}
@@ -919,13 +1024,18 @@
           onFinish={handleExit}
         />{/if}
     {:else if controller.currentPrompt && ['unscored-match', 'contrast', 'recall', 'short-group'].includes(controller.currentPrompt.spec.kind) && ['ready', 'playing', 'answering', 'feedback', 'paused'].includes(controller.phase)}
-      {#key controller.currentPrompt.id}
+      {#if checkInterrupted}<p class="save-status" role="status">{m.check_practice_only()}</p>{/if}
+      <!-- Bind the rendered prompt to its own lifetime: a final answer clears the controller's prompt immediately. -->
+      {#each controller.currentPrompt ? [controller.currentPrompt] : [] as prompt (prompt.id)}
         <RecognitionPrompt
           phase={controller.phase}
-          typed={['recall', 'short-group'].includes(controller.currentPrompt.spec.kind)}
-          scored={controller.currentPrompt.isScored}
+          typed={['recall', 'short-group'].includes(prompt.spec.kind)}
+          scored={prompt.isScored}
           coaching={Boolean(reviewPlan)}
           assessment={Boolean(mixedPlan)}
+          replayed={controller.replayCount > 0}
+          canPlayNextSound={controller.canPlayNextSound}
+          {introduceFormat}
           firstRecall={!reviewPlan &&
             !mixedPlan &&
             controller.currentPromptIndex ===
@@ -937,9 +1047,13 @@
               controller?.setDraft(value);
             }
           }
-          classification={controller.lastAttempt?.classification}
-          options={controller.currentPrompt.spec.options ?? []}
-          expected={controller.currentPrompt.spec.expectedText}
+          restoredUnscored={!reviewPlan &&
+            !mixedPlan &&
+            !prompt.isScored &&
+            controller.state.prompts[controller.currentPromptIndex]?.isScored === true}
+          latencyMs={controller.lastAttempt?.latencyMs}
+          options={prompt.spec.options ?? []}
+          expected={prompt.spec.expectedText}
           entered={controller.lastAttempt?.enteredText}
           isCorrect={controller.lastAttempt?.isCorrect}
           playingCharacter={controller.feedbackCharacter}
@@ -951,19 +1065,28 @@
           onHear={(ch) => controller?.playFeedback(ch)}
           onContinue={handleContinue}
         />
+        {#if checkInterrupted && controller.phase === 'ready' && controller.state.audioError}
+          <button
+            type="button"
+            class="btn-ghost"
+            disabled={leaving}
+            onclick={() => beginCheck(true)}>{m.check_restart()}</button
+          >
+        {/if}
         {#if mixedPlan && controller.phase === 'answering'}<button
             type="button"
             class="btn-ghost check-skip"
             onclick={() => handleSubmitAnswer('', 'keyboard')}>{m.mixed_skip()}</button
           >{/if}
-      {/key}
+      {/each}
     {:else if controller.currentPrompt?.spec.kind === 'introduction' && !['abandoned', 'idle'].includes(controller.phase)}
       <AudioPrompt
         phase={controller.phase}
         audioError={controller.state.audioError}
         isIntro
-        introCharacter={controller.currentPrompt.spec.expectedText}
+        introCharacter={controller.currentPrompt?.spec.expectedText ?? ''}
         introPlayed={controller.state.answerReadyAtMs !== null}
+        showIntroHint={controller.currentPromptIndex === 0}
         onContinue={handleContinue}
         onPlay={() => controller?.play()}
         onReplay={() => controller?.replay()}
@@ -976,6 +1099,18 @@
 {/if}
 
 <style>
+  .mixed-setup {
+    display: grid;
+    gap: var(--space-4);
+    max-width: 32rem;
+  }
+  .mixed-setup h1 {
+    font-size: var(--text-2xl);
+    font-weight: 600;
+  }
+  .mixed-setup .btn-primary {
+    justify-self: start;
+  }
   .check-skip {
     min-width: 7rem;
     min-height: calc(var(--answer-target-min) + var(--space-1));

@@ -74,8 +74,8 @@
         tone: plan.prompts[0].spec.freqHz
       })}
     </p>
+    <p class="supporting">{m.review_unmeasured()}</p>
   {/if}
-  <p class="supporting">{m.review_unmeasured()}</p>
 
   {#if result && round >= 1}<p>{m.review_break_hint()}</p>{/if}
   <div class="actions">

@@ -159,6 +159,15 @@
   .navbar-links.navbar-desktop {
     display: flex;
   }
+  .navbar-inner {
+    flex-wrap: wrap;
+    column-gap: min(var(--space-8), 32px);
+    row-gap: 0;
+    padding-inline: min(var(--space-6), 24px);
+  }
+  .navbar-tools {
+    flex-shrink: 0;
+  }
 }
 
 .navbar-link,
@@ -167,7 +176,7 @@
   box-sizing: border-box;
   min-height: 3rem;
   align-items: center;
-  padding: 0 var(--space-2);
+  padding: 0 min(var(--space-2), 8px);
   border-radius: var(--radius-sm);
   font-size: var(--text-base);
   font-weight: 500;
@@ -208,7 +217,7 @@
 
 .navbar-links {
   align-items: center;
-  gap: var(--space-4);
+  gap: min(var(--space-4), 16px);
 }
 
 .navbar-tools {
@@ -308,11 +317,13 @@
 
 /* Mobile bottom navigation bar (primary destinations) */
 .bottom-nav {
+  container-type: inline-size;
   position: fixed;
   inset-inline: 0;
   bottom: 0;
   z-index: 45;
   display: none;
+  flex-wrap: wrap;
   align-items: stretch;
   background-color: var(--bg-surface);
   border-top: 1px solid var(--border);
@@ -342,7 +353,10 @@
   /* Internal views start below the device inset and scroll clear of the tabs. */
   .page-content {
     padding-top: calc(env(safe-area-inset-top) + var(--page-top-phone));
-    padding-bottom: calc(env(safe-area-inset-bottom) + var(--bottom-nav-clearance));
+    padding-bottom: max(
+      calc(env(safe-area-inset-bottom) + var(--bottom-nav-clearance)),
+      calc(var(--bottom-nav-height, 0px) + var(--space-2))
+    );
   }
 
   /* Hide the bar while the soft keyboard is open (input/textarea focus) */
@@ -407,6 +421,24 @@
   width: 100%;
   min-width: 0;
   text-align: center;
+}
+
+/* When four readable labels no longer fit, keep each destination on one row. */
+@container (width < 18rem) {
+  .bottom-nav-item {
+    flex: 0 0 50%;
+    flex-direction: row;
+    gap: 4px;
+    min-height: 48px;
+    padding: 4px;
+  }
+  .bottom-nav-icon {
+    width: 20px;
+    height: 20px;
+  }
+  .bottom-nav-label {
+    width: auto;
+  }
 }
 
 /* Icon helpers */

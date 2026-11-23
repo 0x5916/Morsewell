@@ -19,6 +19,7 @@ export interface ReviewReadiness {
   readonly profileKey: string;
   readonly character: string;
   readonly dueAt: string;
+  readonly lastExposureAt: string | null;
   readonly coldEligibleAt: string | null;
   readonly actionableAt: string | null;
   readonly ready: boolean;
@@ -186,6 +187,7 @@ export function reviewReadiness(
     profileKey: state.profileKey,
     character: state.character,
     dueAt: state.dueAt,
+    lastExposureAt: known ? exposure.bounds!.latest : null,
     coldEligibleAt: coldEligible === null ? null : at(coldEligible),
     actionableAt: actionable === null ? null : at(actionable),
     ready: actionable !== null && actionable <= now,

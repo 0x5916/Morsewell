@@ -32,11 +32,18 @@ export function createEvidenceSessionRepositories(
   sessionRepo: SessionRepository;
   captureFirst: (prompt: Prompt) => void;
   firstPresentation: (promptId: string) => EvidencePresentation | null;
+  hasInterruptedFirstListen: () => boolean;
 } {
   const first = new Map<string, EvidencePresentation>();
   const frozen = new Map<string, EvidenceRecord>();
   const attempts = new Map<string, AttemptEvent>();
   let session: TrainingSessionRecord | null = resume?.session ?? null;
+  const earlierInterruption = resume?.records.some(
+    (record) =>
+      record.kind === 'observation' &&
+      record.session_id === resume.session.id &&
+      (record.interruption_invalidated === true || record.audio_valid === false)
+  );
   if (resume) {
     for (const r of resume.records) frozen.set(r.id, r);
     for (const a of resume.attempts) attempts.set(a.id, a);
@@ -165,6 +172,9 @@ export function createEvidenceSessionRepositories(
   };
   const allAttempts = () => [...attempts.values()];
   return {
+    hasInterruptedFirstListen: () =>
+      Boolean(earlierInterruption) ||
+      [...first.values()].some((presentation) => presentation.interrupted),
     firstPresentation: (id) => first.get(id) ?? null,
     captureFirst(prompt) {
       const presentation = audio.presentation();

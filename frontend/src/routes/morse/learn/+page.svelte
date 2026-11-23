@@ -19,9 +19,13 @@
     subscribeTrainingSync,
     trainingSyncState
   } from '#lib/training-sync.svelte.ts';
+  import {
+    guidedRepeatHint,
+    isOptionalCheck
+  } from '#lib/components/learning/recommendation-copy.ts';
+  import { recentConfusionPairs } from '#lib/training/v2/progress-summary.ts';
   import { deriveCourseGuidance } from '#lib/training/v2/course-guidance.ts';
   import { isRecommendationLessonLocked } from '#lib/training/v2/lesson-access.ts';
-  import { getMasteryBlockers } from '#lib/training/v2/mastery.ts';
   import type { CharacterMastery, TrainingSessionRecord } from '#lib/training/v2/types.ts';
   import { LESSONS } from '#lib/training/sequence.ts';
   import CoursePath from '#lib/components/learning/CoursePath.svelte';
@@ -41,6 +45,8 @@
   let inProgressSession = $state<TrainingSessionRecord | null>(null);
   let masteryMap = $state.raw<Map<string, CharacterMastery>>(new Map());
   let reviewChars = $state<string[]>([]);
+  let remainingMasteries = $state.raw<CharacterMastery[]>([]);
+  let practiceHint = $state('');
   let hasAttempts = $state(false);
   let courseComplete = $state(false);
   let mounted = false;
@@ -75,7 +81,6 @@
     return 'next';
   });
 
-  let currentIntroduced = $derived(LESSONS[currentStep - 1] ?? 'KM');
   let activeStep = $derived(inProgressSession?.step ?? currentStep);
   let activeIntroduced = $derived(LESSONS[activeStep - 1] ?? 'KM');
   let unlockTitle = $derived(
@@ -85,12 +90,6 @@
           characters: LESSONS[currentStep].split('').join(', ')
         })
       : m.learn_unlock_complete_title()
-  );
-  let masteryChecks = $derived(
-    currentIntroduced.split('').flatMap((character) => {
-      const mastery = masteryMap.get(character);
-      return mastery && getMasteryBlockers(mastery).length ? [{ character, mastery }] : [];
-    })
   );
   let recommendationLocked = $derived(
     learning.snapshot
@@ -114,6 +113,7 @@
     inProgressSession = null;
     masteryMap = new Map();
     reviewChars = [];
+    remainingMasteries = [];
     hasAttempts = false;
     currentStep = 1;
     unlockedStep = 1;
@@ -146,8 +146,10 @@
         history: allAttempts
       });
       currentStep = guidance.currentStep;
+      practiceHint = guidedRepeatHint(recentConfusionPairs(recentAttempts), currentStep);
       unlockedStep = guidance.unlockedStep;
       masteryMap = guidance.masteryMap;
+      remainingMasteries = guidance.remainingMasteries;
       reviewChars = guidance.reviewChars;
       courseComplete = guidance.courseComplete;
       hasAttempts = attemptCount > 0;
@@ -230,27 +232,42 @@
   <title>{m.nav_learn()} · {SITE_NAME}</title>
 </svelte:head>
 
+{#snippet lessonHero(secondary: boolean)}
+  <LearnHero
+    embedded
+    {secondary}
+    hint={practiceHint}
+    kind={heroKind}
+    step={activeStep}
+    introducedChar={activeIntroduced}
+    {reviewChars}
+    resumableSessionId={inProgressSession?.id}
+    errorMessage={errorMsg}
+    {sessionActionPending}
+    onStart={handleStartLesson}
+    onResume={handleResumeSession}
+    onDiscardResume={handleDiscardResume}
+  />
+{/snippet}
+
 {#snippet currentLesson()}
   <SavedSessions
     entries={savedSessions}
     onDiscard={(entry) => void discardSaved(entry)}
     busy={sessionActionPending}
   />
-  {#if learning.snapshot && learning.snapshot.knownCharacters.length >= 2 && !inProgressSession && activeStep === currentStep && !recommendationLocked}
-    <LearningOverview snapshot={learning.snapshot} unlockedLesson={unlockedStep} />
-  {:else}<LearnHero
-      embedded
-      kind={heroKind}
-      step={activeStep}
-      introducedChar={activeIntroduced}
-      {reviewChars}
-      resumableSessionId={inProgressSession?.id}
-      errorMessage={errorMsg}
-      {sessionActionPending}
-      onStart={handleStartLesson}
-      onResume={handleResumeSession}
-      onDiscardResume={handleDiscardResume}
-    />{/if}
+  {#if !loading && !errorMsg && learning.snapshot && learning.snapshot.knownCharacters.length >= 2 && !inProgressSession && !recommendationLocked && learning.snapshot.recommendation.primary.reason !== 'new-lesson'}
+    {@const leadWithLesson = isOptionalCheck(learning.snapshot.recommendation.primary)}
+    {#if leadWithLesson && !savedSessions.length}{@render lessonHero(false)}{/if}
+    <LearningOverview
+      snapshot={learning.snapshot}
+      unlockedLesson={unlockedStep}
+      secondary={leadWithLesson || savedSessions.length > 0}
+    />
+    {#if !leadWithLesson && !savedSessions.length}{@render lessonHero(true)}{/if}
+  {:else if !savedSessions.length || errorMsg}
+    {@render lessonHero(false)}
+  {/if}
   {#if errorMsg}
     <button type="button" class="btn-primary" onclick={loadLessons}>{m.progress_retry()}</button>
   {/if}
@@ -258,8 +275,8 @@
 {/snippet}
 
 {#snippet lessonRequirements()}
-  {#if !loading && !errorMsg && activeStep === currentStep && masteryChecks.length > 0 && !learning.snapshot?.knownCharacters.length}
-    <LessonRequirements {unlockTitle} checks={masteryChecks} />
+  {#if !loading && !errorMsg && remainingMasteries.length > 0}
+    <LessonRequirements {unlockTitle} {remainingMasteries} />
   {/if}
 {/snippet}
 
@@ -296,19 +313,8 @@
 </div>
 
 <style>
-  .learn-home-container :global(.saved-sessions) {
-    margin-block: 0;
-  }
-  .learn-home-container :global(.saved-sessions h2) {
-    font-size: 1.5rem;
-    font-weight: 600;
-    margin-bottom: var(--space-3);
-  }
-  .learn-home-container :global(.saved-sessions article) {
-    margin-top: var(--space-6);
-  }
   .learn-home-container :global(.learning-overview h2) {
-    font-size: 2rem;
+    font-size: var(--text-xl);
   }
   .learn-home-container {
     display: flex;

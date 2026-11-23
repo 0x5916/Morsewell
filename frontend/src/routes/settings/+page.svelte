@@ -45,6 +45,7 @@
   import { locales } from '#lib/paraglide/runtime.js';
   import { getLocaleLongLabel, type LocalePreference } from '#lib/locale.ts';
   import { LESSONS } from '#lib/training/sequence.ts';
+  import { DEFAULT_LESSON_PLAN_CONFIG as guidedSound } from '#lib/training/v2/lesson-builder.ts';
   import {
     applyClientPageSettings,
     applyPageLanguagePreference,
@@ -698,6 +699,13 @@
 {#snippet sound(detail: boolean)}
   <section class="panel panel--ledger" id="sound-defaults">
     {@render sectionHeading(detail, m.settings_sound_defaults())}
+    <p class="body-text">
+      {m.settings_sound_scope({
+        speed: guidedSound.charWpm,
+        spacing: guidedSound.effWpm,
+        tone: guidedSound.freqHz
+      })}
+    </p>
     <form onsubmit={saveCW} class="settings-form">
       <label class="field">
         <span class="label-text">{m.trainer_label_char_wpm()}</span>

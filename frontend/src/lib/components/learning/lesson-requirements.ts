@@ -1,4 +1,5 @@
 import * as m from '#lib/paraglide/messages.js';
+import { getLocale } from '#lib/paraglide/runtime.js';
 import { getMasteryBlockers, type MasteryBlocker } from '#lib/training/v2/mastery.ts';
 import { DEFAULT_MASTERY_POLICY, type CharacterMastery } from '#lib/training/v2/types.ts';
 
@@ -47,7 +48,9 @@ export function masteryRequirements(mastery: CharacterMastery): MasteryRequireme
             mastery.totalAttempts === 0
               ? m.learn_unlock_accuracy_missing_value({ required })
               : m.learn_unlock_accuracy_value({
-                  current: (mastery.rollingAccuracy * 100).toFixed(1),
+                  current: (mastery.rollingAccuracy * 100).toLocaleString(getLocale(), {
+                    maximumFractionDigits: 1
+                  }),
                   required
                 }),
           current: mastery.totalAttempts === 0 ? undefined : mastery.rollingAccuracy,
@@ -55,7 +58,9 @@ export function masteryRequirements(mastery: CharacterMastery): MasteryRequireme
         };
       }
       case 'speed': {
-        const required = (policy.maxAutomaticLatencyMs / 1000).toFixed(3);
+        const required = (policy.maxAutomaticLatencyMs / 1000).toLocaleString(getLocale(), {
+          maximumFractionDigits: 3
+        });
         return {
           id,
           label: m.learn_unlock_speed_label(),
@@ -63,7 +68,9 @@ export function masteryRequirements(mastery: CharacterMastery): MasteryRequireme
             mastery.medianLatencyMs === null
               ? m.learn_unlock_speed_missing_value({ required })
               : m.learn_unlock_speed_value({
-                  current: (Math.ceil(mastery.medianLatencyMs) / 1000).toFixed(3),
+                  current: (Math.ceil(mastery.medianLatencyMs) / 1000).toLocaleString(getLocale(), {
+                    maximumFractionDigits: 3
+                  }),
                   required
                 })
         };
