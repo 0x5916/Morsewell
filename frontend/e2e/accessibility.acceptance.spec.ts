@@ -80,12 +80,13 @@ for (const { input, viewport, colorScheme } of [
 test('the Practice title tip matches the Penpot heading and close treatment', async ({ page }) => {
   await resetToHome(page);
   await page.goto('/morse/practice', { waitUntil: 'networkidle' });
-  await page.waitForTimeout(500);
   const trigger = page.getByRole('button', { name: 'About Practice' });
-  await trigger.click();
-
   const dialog = page.getByRole('dialog', { name: 'About Practice' });
-  await expect(dialog).toBeVisible();
+  // Firefox can drop a click sent before hydration attaches the trigger handler.
+  await expect(async () => {
+    await trigger.click();
+    await expect(dialog).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
   await expect(dialog.getByText('About Practice', { exact: true })).toBeVisible();
   const close = dialog.getByRole('button', { name: 'Close' });
   await expect(close).toBeVisible();
