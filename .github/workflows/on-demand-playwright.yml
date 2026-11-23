@@ -144,7 +144,7 @@ jobs:
       - name: Generate the run summary
         env:
           OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO }}
-          OPENCODE_GO_MODEL: ${{ vars.OPENCODE_GO_MODEL || 'glm-5.3' }}
+          OPENCODE_GO_MODEL: ${{ vars.OPENCODE_GO_MODEL || 'deepseek-v4.1-flash' }}
           PLAYWRIGHT_REPORT: ${{ needs.playwright.outputs.report }}
         run: |
           node --input-type=module <<'JS'
@@ -193,7 +193,7 @@ jobs:
             // Escape the model output before displaying it as literal text.
             const escaped = text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
             writeSummary(`<pre>${escaped}</pre>`);
-            console.log('OpenCode Go generated the run summary.');
+            console.log(`OpenCode Go generated the run summary with ${OPENCODE_GO_MODEL}.`);
           } catch {
             writeSummary('OpenCode Go could not generate a summary. See the Playwright results above.');
           }
