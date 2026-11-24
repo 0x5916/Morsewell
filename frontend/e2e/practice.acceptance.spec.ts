@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import de from '../messages/de.json' with { type: 'json' };
+import { installDeterministicAudioClock } from './audio-clock';
 import { answerBoxAppearance, expectPhoneQwerty } from './phone-keyboard';
 import {
   EVIDENCE_DB,
@@ -531,6 +532,7 @@ test.describe('passage setup on a phone', () => {
     await filter.check();
     await button('Use phone keyboard').tap();
     await saveAndLeave(page);
+    await installDeterministicAudioClock(page);
     await page.goto('/en/morse/learn/session?check=KM');
     await button('Start first-listen check').tap();
     const answer = page.getByRole('textbox', { name: 'Type your answer' });
