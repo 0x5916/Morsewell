@@ -4,7 +4,8 @@
   import { acceptsSessionShortcut } from './keyboard';
   import CharacterGrid from './CharacterGrid.svelte';
   import AnswerInput from './AnswerInput.svelte';
-  import type { InputMode } from '../../training/v2/types';
+  import { phoneKeyboard } from '../phone-keyboard.svelte';
+  import type { AnswerSource } from '../../training/v2/types';
   import * as m from '#lib/paraglide/messages.js';
   import { MORSE } from '../../training/sequence';
   import { getLocale } from '#lib/paraglide/runtime.js';
@@ -12,6 +13,8 @@
   interface Props {
     phase: GuidedSessionPhase;
     typed?: boolean;
+    hasSymbols?: boolean;
+    onSkip?: () => void;
     scored: boolean;
     coaching?: boolean;
     assessment?: boolean;
@@ -31,7 +34,7 @@
     onPlay: () => void;
     onReplay: () => void;
     onSelect: (character: string) => void;
-    onSubmit: (text: string, mode: InputMode) => void;
+    onSubmit: (text: string, mode: AnswerSource) => void;
     onHear: (character: string) => void;
     onContinue: () => void;
   }
@@ -39,6 +42,8 @@
   let {
     phase,
     typed = false,
+    hasSymbols = true,
+    onSkip,
     scored,
     coaching = false,
     assessment = false,
@@ -63,7 +68,13 @@
     onContinue
   }: Props = $props();
   let feedback = $derived(phase === 'feedback');
+  const keyboard = phoneKeyboard();
+  const phoneResponse = $derived(typed && keyboard.available);
   let playing = $derived(phase === 'playing');
+  let nativeFocused = $state(false);
+  const keepNativeField = $derived(
+    playing && assessment && nativeFocused && phoneResponse && !keyboard.active
+  );
   let canPlay = $derived(phase === 'ready' || phase === 'answering');
   const promptId = $props.id();
   function focusHeading(heading: HTMLElement) {
@@ -91,7 +102,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<section class="recognition" class:assessment class:feedback>
+<section class="recognition" class:assessment class:feedback class:phone-response={phoneResponse}>
   {#if feedback}
     <header>
       <h1 tabindex="-1" class:correct={isCorrect} {@attach focusHeading}>
@@ -183,11 +194,15 @@
         {/if}
       </header>
     {/if}
-    {#if phase === 'answering'}
+    {#if phase === 'answering' || keepNativeField}
       {#if typed}
         <AnswerInput
+          {keyboard}
+          {hasSymbols}
           bind:value={draft}
           expectedLength={expected.length}
+          listening={keepNativeField}
+          onNativeFocusChange={(focused) => (nativeFocused = focused)}
           {onSubmit}
           onReplay={play}
         />
@@ -195,8 +210,13 @@
         <CharacterGrid {options} large {onSelect} />
       {/if}
     {/if}
-    {#if canPlay}
-      <div class="play-controls">
+    {#if canPlay || keepNativeField}
+      <div
+        class="play-controls"
+        class:listening={keepNativeField}
+        inert={keepNativeField}
+        class:with-skip={onSkip && phase !== 'ready'}
+      >
         <button
           type="button"
           class={phase === 'ready' ? 'btn-primary' : 'btn-ghost'}
@@ -206,21 +226,28 @@
           aria-keyshortcuts="Space"
           onclick={play}
         >
-          {#if phase === 'answering'}<RotateCcw
-              size={20}
-              aria-hidden="true"
-            />{m.lesson_replay_sound()}
+          {#if phase !== 'ready'}<RotateCcw size={20} aria-hidden="true" />{m.lesson_replay_sound()}
           {:else}<Play size={20} aria-hidden="true" />{m.lesson_play_sound()}{/if}
           <kbd aria-hidden="true">{m.lesson_key_space()}</kbd>
         </button>
-        {#if phase === 'answering' && assessment}
+        {#if phase !== 'ready' && assessment}
           <p class="reassurance" id={`${promptId}-replay`}>
             {replayed ? m.check_credit_used() : m.check_replay_cost()}
           </p>
         {:else if phase === 'answering' && scored}
-          <p class={firstRecall ? 'reassurance' : 'sr-only'} id={`${promptId}-replay`}>
+          <p
+            class="reassurance"
+            class:sr-only={!firstRecall && !phoneResponse}
+            class:quiet-replay={!firstRecall && phoneResponse}
+            id={`${promptId}-replay`}
+          >
             {m.lesson_replay_timing()}
           </p>
+        {/if}
+        {#if onSkip && phase !== 'ready'}
+          <button type="button" class="btn-ghost check-skip" onclick={onSkip}
+            >{m.mixed_skip()}</button
+          >
         {/if}
       </div>
     {/if}
@@ -297,6 +324,9 @@
     display: grid;
     gap: var(--space-2);
   }
+  .play-controls.listening {
+    visibility: hidden;
+  }
   kbd {
     font: inherit;
     font-size: var(--text-xs);
@@ -333,6 +363,56 @@
     min-height: auto;
     gap: var(--space-8);
     padding-block: 0;
+  }
+  .recognition.phone-response {
+    flex: 1 0 auto;
+    min-height: 0;
+    gap: min(var(--space-3), 12px);
+    padding-block: 0;
+  }
+  .phone-response :global(.answer-input-container),
+  .phone-response.feedback .sounds {
+    margin-block-start: auto;
+  }
+  .phone-response .play-controls button {
+    min-height: 48px;
+  }
+  .check-skip {
+    width: auto;
+    min-width: min(7rem, 100%);
+    justify-self: center;
+  }
+  .phone-response .with-skip {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+  .phone-response .with-skip p {
+    grid-column: 1 / -1;
+  }
+  .phone-response .check-skip {
+    grid-area: 1 / 2;
+    width: 100%;
+    min-width: 0;
+  }
+  @container (width < 17rem) {
+    .phone-response .with-skip {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .phone-response .check-skip {
+      grid-area: auto;
+    }
+  }
+  .quiet-replay {
+    opacity: 0;
+    pointer-events: none;
+    user-select: none;
+  }
+  @media (max-height: 640px) {
+    .recognition.phone-response {
+      gap: min(var(--space-2), 8px);
+    }
+    .recognition.phone-response header {
+      margin-block-end: 0;
+    }
   }
   .assessment header {
     min-height: auto;

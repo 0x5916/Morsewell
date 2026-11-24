@@ -3,6 +3,7 @@ import de from '../messages/de.json' with { type: 'json' };
 import en from '../messages/en.json' with { type: 'json' };
 import { installDeterministicAudioClock } from './audio-clock';
 import { resetToHome } from './helpers';
+import { expectPhoneQwerty } from './phone-keyboard';
 
 test.beforeEach(async ({ page }) => {
   await installDeterministicAudioClock(page);
@@ -14,7 +15,11 @@ for (const { width, locale, labels } of [
   { width: 1280, locale: 'en', labels: en }
 ]) {
   test.describe(`first-listen check at ${width}px with 200% text (${locale})`, () => {
-    test.use({ viewport: { width, height: 844 }, hasTouch: width < 500 });
+    test.use({
+      viewport: { width, height: 844 },
+      screen: { width, height: 844 },
+      hasTouch: width < 500
+    });
 
     test('the warning opens at its heading and replay and skip stay reachable', async ({
       page
@@ -30,6 +35,11 @@ for (const { width, locale, labels } of [
       await expect(answer).toBeEnabled();
       await expect(answer).toBeInViewport({ ratio: 1 });
       const replay = button(labels.lesson_replay_sound);
+      if (width < 500) {
+        await expect(answer).toHaveAttribute('inputmode', 'none');
+        await expectPhoneQwerty(page);
+        await replay.evaluate((button) => button.scrollIntoView({ block: 'center' }));
+      }
       await expect(replay).toBeInViewport({ ratio: 1 });
 
       const save = button(labels.session_save_leave);
@@ -48,7 +58,8 @@ for (const { width, locale, labels } of [
 
       // A phone keyboard can shorten the visual viewport without a layout viewport resize.
       if (width < 500) {
-        await answer.focus();
+        await button(labels.training_use_phone).click();
+        await expect(answer).toBeEditable();
         await page.evaluate(() => {
           const viewport = window.visualViewport!;
           Object.defineProperty(viewport, 'height', { configurable: true, value: 400 });
@@ -71,7 +82,7 @@ for (const [width, height] of [
   [844, 390]
 ]) {
   test.describe(`landscape check at ${width} × ${height} and 200% text`, () => {
-    test.use({ viewport: { width, height }, hasTouch: true });
+    test.use({ viewport: { width, height }, screen: { width, height }, hasTouch: true });
 
     test('the keyboard can cover the header area without blocking replay, skip or save', async ({
       page
@@ -83,7 +94,10 @@ for (const [width, height] of [
       await button(de.check_begin_explicit).tap();
       const answer = page.getByRole('textbox', { name: de.lesson_answer_label });
       await expect(answer).toBeEnabled();
-      await answer.focus();
+      await expect(answer).toHaveAttribute('inputmode', 'none');
+      await expectPhoneQwerty(page);
+      await button(de.training_use_phone).tap();
+      await expect(answer).toBeFocused();
       await page.evaluate(() => {
         const viewport = window.visualViewport!;
         Object.defineProperty(viewport, 'height', { configurable: true, value: 175 });

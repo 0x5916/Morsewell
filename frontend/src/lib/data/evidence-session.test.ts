@@ -117,7 +117,9 @@ describe('prospective session capture through controller ports', () => {
       f.controller.play();
       await f.audio.flush();
       await f.finish();
-      expect(f.controller.submitAnswer(prompt.spec.expectedText, 'keyboard')).toBe(true);
+      expect(
+        f.controller.submitAnswer(prompt.spec.expectedText, i % 2 ? 'keyboard' : 'full-alphabet')
+      ).toBe(true);
       f.advance();
     }
     expect(await f.controller.flushPersistence()).toBe(true);
@@ -125,6 +127,12 @@ describe('prospective session capture through controller ports', () => {
       observations = records.filter((r) => r.kind === 'observation');
     expect(records).toHaveLength(62);
     expect(observations).toHaveLength(20);
+    expect(
+      observations.filter((record) => record.response_interface === 'full-alphabet')
+    ).toHaveLength(10);
+    expect(observations.filter((record) => record.response_interface === 'keyboard')).toHaveLength(
+      10
+    );
     expect(records.find((r) => r.kind === 'terminal')).toMatchObject({
       status: 'completed',
       observation_ids: observations.map((o) => o.id).sort()
@@ -139,6 +147,23 @@ describe('prospective session capture through controller ports', () => {
         nowIso: '2026-10-21T00:00:00Z'
       }).checks[0].whole
     ).toMatchObject({ eligible: 20, unassistedCorrect: 20 });
+    await f.controller.dispose();
+  });
+  it('keeps unmarked touch attempts and choice grids restricted', async () => {
+    const f = await fixture();
+    await f.controller.start();
+    for (const source of ['touch', 'grid'] as const) {
+      f.controller.play();
+      await f.audio.flush();
+      await f.finish();
+      f.controller.submitAnswer(f.controller.currentPrompt!.spec.expectedText, source);
+    }
+    await f.controller.flushPersistence();
+    const records = (await f.repo.all()).filter((record) => record.kind === 'observation');
+    expect(records.map((record) => record.response_interface)).toEqual([
+      'restricted',
+      'restricted'
+    ]);
     await f.controller.dispose();
   });
   it('retains an interrupted first presentation and freezes observations across save retries', async () => {

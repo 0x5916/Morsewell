@@ -17,6 +17,8 @@
   } from '../../practice/copy-attempt';
   import { normalizePlaybackSettings } from '../../practice/playback';
   import { practiceKeyIntent } from '../../practice/keyboard';
+  import TrainingKeyboard from '../TrainingKeyboard.svelte';
+  import { phoneKeyboard } from '../phone-keyboard.svelte';
   import { formatClock, formatPercent } from '../../format';
   import MorsePlayer from '../MorsePlayer.svelte';
   import ResultOverlay from '../ResultOverlay.svelte';
@@ -70,6 +72,7 @@
   let comparison = $derived(attempt.review?.comparison);
   let playbackPaused = $state(false);
   let answerEl = $state<HTMLTextAreaElement | null>(null);
+  const keyboard = phoneKeyboard();
   let discardOpen = $state(false);
   let discardReturnFocus = $state<HTMLElement | null>(null);
   let resolveDiscard: ((confirmed: boolean) => void) | null = null;
@@ -204,6 +207,9 @@
 
   export function focusCopy() {
     answerEl?.focus();
+  }
+  function editCopy(value: string) {
+    inputText = boundCopyInput(lessonText, value);
   }
   export function hasUnfinishedCopy() {
     return unfinished;
@@ -369,20 +375,33 @@
     </p>
   {/if}
   {#snippet answerControls()}
-    <div class="answer-section" class:hidden={!sessionStarted}>
+    <div
+      class="answer-section"
+      class:hidden={!sessionStarted}
+      class:phone-answer={keyboard.available}
+    >
       {#if sessionStarted}
-        <label class="field">
-          <span class="label-text">{m.trainer_answer_label()}</span>
-          <textarea
-            bind:this={answerEl}
-            bind:value={() => inputText, (value) => (inputText = boundCopyInput(lessonText, value))}
-            class="textarea copy-textarea"
-            readonly={result >= 0}
-            maxlength={copyInputLimit(lessonText)}
-            autocapitalize="characters"
-            autocomplete="off"
-            spellcheck="false"></textarea>
-        </label>
+        <TrainingKeyboard
+          mode={keyboard}
+          field={answerEl}
+          onEdit={editCopy}
+          disabled={result >= 0}
+          lessonCharacters={context === 'groups' ? currentLessonChars : undefined}
+        >
+          <label class="field">
+            <span class="label-text">{m.trainer_answer_label()}</span>
+            <textarea
+              bind:this={answerEl}
+              bind:value={() => inputText, editCopy}
+              class="textarea copy-textarea"
+              readonly={result >= 0}
+              inputmode={keyboard.active ? 'none' : 'text'}
+              maxlength={copyInputLimit(lessonText)}
+              autocapitalize="characters"
+              autocomplete="off"
+              spellcheck="false"></textarea>
+          </label>
+        </TrainingKeyboard>
       {/if}
 
       {#if result >= 0}
@@ -631,6 +650,7 @@
     display: contents;
   }
   .answer-section {
+    --keyboard-outset: calc(var(--practice-card-padding) + var(--training-gutter));
     grid-column: 1;
     grid-row: 5;
     margin: 0 var(--practice-card-padding) var(--practice-card-padding);
@@ -645,6 +665,10 @@
     font-family: var(--font-mono);
     font-size: var(--text-lg);
     text-transform: uppercase;
+  }
+  .phone-answer .copy-textarea {
+    min-height: 3lh;
+    height: calc(3lh + var(--space-4));
   }
   .result-line {
     margin: 0;

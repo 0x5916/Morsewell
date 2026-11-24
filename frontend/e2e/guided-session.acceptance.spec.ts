@@ -1,6 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
-import { readGuidedCheckpoint, readOwnedAttempts, readOwnedSessions, resetToHome } from './helpers';
+import {
+  readGuidedCheckpoint,
+  readOwnedAttempts,
+  readOwnedSessions,
+  resetAcceptance,
+  resetToHome
+} from './helpers';
 import { installDeterministicAudioClock } from './audio-clock';
+import { expectPhoneQwerty } from './phone-keyboard';
 
 type GuidedPrompt = {
   id: string;
@@ -60,16 +67,39 @@ async function checkRecall(page: Page, expected: string, touch: boolean) {
     const fieldBox = await input.boundingBox();
     const replayBox = await replay.boundingBox();
     expect(fieldBox!.y + fieldBox!.height).toBeLessThanOrEqual(replayBox!.y);
-    await expect(prompt).not.toContainText(decoded);
-    if (!touch) await expect(input).toBeFocused();
+    if (touch) {
+      await expect(input).toHaveAttribute('inputmode', 'none');
+      await expect(prompt.getByRole('checkbox', { name: 'Lesson keys only' })).toHaveCount(0);
+      await expect(prompt.locator('.keys .character:enabled')).toHaveText([
+        ...'QWERTYUIOPASDFGHJKLZXCVBNM'
+      ]);
+      await expect(prompt.locator('header')).not.toContainText(decoded);
+    } else {
+      await expect(prompt).not.toContainText(decoded);
+      await expect(input).toBeFocused();
+    }
   }
-  await input.fill(expected);
+  const heading = prompt.getByRole('heading');
+  const questionTop = (await heading.boundingBox())!.y;
+  const answerBox = await input.boundingBox();
+  if (touch) {
+    await expectPhoneQwerty(page);
+    await expect(prompt.getByRole('button', { name: 'Backspace' })).toHaveCount(0);
+    await expect(prompt.getByRole('button', { name: /Numbers and punctuation/ })).toHaveCount(0);
+  }
+  if (touch) await prompt.getByRole('button', { name: expected, exact: true }).tap();
+  else await input.fill(expected);
   const proceed = prompt.getByRole('button', { name: 'Play next sound', exact: true });
   await expect(proceed).toBeEnabled();
   await expect(replay).toHaveCount(0);
   await expect(proceed).toHaveAttribute('aria-keyshortcuts', 'Enter');
+  if (touch) expect((await heading.boundingBox())!.y).toBeCloseTo(questionTop, 0);
   if (touch) await proceed.tap();
   else await page.keyboard.press('Enter');
+  if (touch) {
+    await expect(input).toBeEnabled();
+    expect(await input.boundingBox()).toEqual(answerBox);
+  }
 }
 
 async function completeGuidedLesson(page: Page, touch: boolean) {
@@ -123,7 +153,15 @@ async function completeGuidedLesson(page: Page, touch: boolean) {
       if (kind === 'recall' || kind === 'short-group') {
         const input = page.getByRole('textbox', { name: 'Type your answer' });
         await expect(input).toBeEnabled({ timeout: 10_000 });
-        await input.fill(response);
+        if (touch) {
+          const key = (ch: string) => page.getByRole('button', { name: ch, exact: true });
+          if (kind === 'short-group') {
+            await key(other).tap();
+            await key('Backspace').tap();
+            await expect(input).toHaveValue('');
+          }
+          for (const ch of response) await key(ch).tap();
+        } else await input.fill(response);
       } else {
         const option = page.getByRole('button', { name: `Select ${response}`, exact: true });
         await expect(option).toBeEnabled({ timeout: 10_000 });
@@ -165,7 +203,11 @@ async function completeGuidedLesson(page: Page, touch: boolean) {
   expect(new Set(attempts.map((attempt) => attempt.id)).size).toBe(attempts.length);
   expect(attempts.every((attempt) => attempt.sessionId === guided[0].id)).toBe(true);
   expect(attempts.filter((attempt) => attempt.promptId === prompts[firstRecall].id)).toEqual([
-    expect.objectContaining({ replayCount: 1, isCorrect: true })
+    expect.objectContaining({
+      replayCount: 1,
+      isCorrect: true,
+      inputMode: touch ? 'touch' : 'keyboard'
+    })
   ]);
 
   if (!touch) {
@@ -195,10 +237,81 @@ test('a guided lesson completes once with phase-specific playback cues and keybo
 });
 
 test.describe('guided playback on a phone', () => {
-  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, colorScheme: 'dark' });
+  test.use({
+    viewport: { width: 390, height: 844 },
+    screen: { width: 390, height: 844 },
+    hasTouch: true,
+    colorScheme: 'dark'
+  });
 
   test('tapping Play, Replay and Continue completes the guided lesson once', async ({ page }) => {
     await completeGuidedLesson(page, true);
+  });
+
+  test('an engaged phone keyboard stays focused between mixed prompts and ignores early typing', async ({
+    page
+  }) => {
+    await resetToHome(page, 'Returning learner / populated history');
+    await installDeterministicAudioClock(page);
+    await page.goto('/en/morse/learn/session?check=KM');
+    const button = (name: string) => page.getByRole('button', { name, exact: true });
+    await button('Start first-listen check').tap();
+    await button('Use phone keyboard').tap();
+    const answer = page.getByRole('textbox', { name: 'Type your answer' });
+    await expect(answer).toBeFocused();
+    const nativeField = (await answer.elementHandle())!;
+    await holdAudio(page);
+    await page.keyboard.type('K');
+    await expect(page.getByRole('progressbar', { name: 'Prompt 2 of 20' })).toBeVisible();
+    await expect(page.locator('.recognition .playback-state')).toBeVisible();
+    expect(await nativeField.evaluate((field) => field === document.activeElement)).toBe(true);
+    await page.keyboard.type('X');
+    await finishAudio(page);
+    await expect(page.getByRole('heading', { name: 'What did you hear?' })).toBeVisible();
+    await expect(answer).toBeFocused();
+    expect(await answer.evaluate((field, previous) => field === previous, nativeField)).toBe(true);
+    await expect(answer).toHaveValue('');
+    await expect
+      .poll(() => readGuidedCheckpoint(page))
+      .toMatchObject({
+        state: { phase: 'answering', attempts: [{ enteredText: 'K', inputMode: 'keyboard' }] }
+      });
+  });
+
+  test('punctuation stays available on letter prompts after it enters the curriculum', async ({
+    page
+  }) => {
+    await resetAcceptance(page, 'Course complete', /\/en\/morse\/learn$/);
+    await installDeterministicAudioClock(page);
+    // Lesson 12 introduces the period. Lesson 13 introduces N.
+    await page.goto('/en/morse/learn/session?step=13');
+    const button = (name: string) => page.getByRole('button', { name, exact: true });
+    await button('Listen to N').tap();
+    await button('Continue').tap();
+    const checkpoint = (await readGuidedCheckpoint(page)) as GuidedCheckpoint;
+    const prompts = checkpoint.state.prompts;
+    for (const [index, { spec }] of prompts.entries()) {
+      if (spec.kind === 'introduction') continue;
+      await expect(
+        page.getByRole('progressbar', { name: `Prompt ${index + 1} of ${prompts.length}` })
+      ).toBeVisible();
+      const play = button('Play sound');
+      if (await play.isVisible()) await play.tap();
+      if (spec.kind === 'recall') {
+        const answer = page.getByRole('textbox', { name: 'Type your answer' });
+        await expect(answer).toBeEnabled();
+        await button('123 · Numbers and punctuation').tap();
+        await button('Period').tap();
+        if (spec.expectedText !== '.') {
+          await expect(button('Your answer · .')).toBeEnabled();
+          return;
+        }
+      } else {
+        await button(`Select ${spec.expectedText}`).tap();
+      }
+      await page.getByRole('button', { name: /^(Play next sound|Continue)$/ }).tap();
+    }
+    throw new Error('Lesson 13 did not offer a letter recall');
   });
 });
 

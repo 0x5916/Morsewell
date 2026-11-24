@@ -35,6 +35,7 @@
     isGuidedLessonUnlocked
   } from '#lib/training/v2/lesson-access.ts';
   import { createSessionId } from '#lib/training/v2/ids.ts';
+  import { getLessonChars } from '#lib/training/sequence.ts';
   import MixedCheckPanel from '#lib/components/learning/MixedCheckPanel.svelte';
   import { createLearningView, loadOwnerLearningSnapshot } from '#lib/learning-view.svelte.ts';
   import { learningSyncState } from '#lib/learning-sync.svelte.ts';
@@ -42,7 +43,7 @@
   import { createAttemptRepository } from '#lib/data/attempt-repository.ts';
   import { createSessionRepository } from '#lib/data/session-repository.ts';
   import { GuidedSessionController } from '#lib/training/v2/session-controller.svelte.ts';
-  import type { InputMode } from '#lib/training/v2/types.ts';
+  import type { AnswerSource } from '#lib/training/v2/types.ts';
   import SessionShell from '#lib/components/learning/SessionShell.svelte';
   import AudioPrompt from '#lib/components/learning/AudioPrompt.svelte';
   import RecognitionPrompt from '#lib/components/learning/RecognitionPrompt.svelte';
@@ -743,9 +744,11 @@
     resumeAfterExit = false;
   }
 
-  function handleSubmitAnswer(text: string, mode: InputMode) {
+  function handleSubmitAnswer(text: string, mode: AnswerSource) {
     if (!controller) return;
-    if (controller.submitAnswer(text, mode)) {
+    // Ordinary guided history syncs only the input mode. Reviews and checks also capture the interface.
+    const source = mode === 'full-alphabet' && !reviewPlan && !mixedPlan ? 'touch' : mode;
+    if (controller.submitAnswer(text, source)) {
       answerDraft = '';
       if (mixedPlan && controller.phase === 'ready' && !document.hidden) controller.play();
     }
@@ -947,7 +950,9 @@
     bind:showExitConfirm={showCheckExitConfirm}
     pauseDetails={mixedPlan ? checkRules : undefined}
   >
-    {#if controller.phase !== 'complete'}{@render storageStatus()}{/if}
+    {#if controller.phase !== 'complete'}
+      <div class="session-status" data-saving={m.lesson_saving()}>{@render storageStatus()}</div>
+    {/if}
     {#if controller.phase === 'paused' && !resumeAfterExit}
       <div class="paused-banner" class:check-paused={Boolean(mixedPlan)}>
         <Pause size={28} aria-hidden="true" />
@@ -1025,11 +1030,14 @@
         />{/if}
     {:else if controller.currentPrompt && ['unscored-match', 'contrast', 'recall', 'short-group'].includes(controller.currentPrompt.spec.kind) && ['ready', 'playing', 'answering', 'feedback', 'paused'].includes(controller.phase)}
       {#if checkInterrupted}<p class="save-status" role="status">{m.check_practice_only()}</p>{/if}
-      <!-- Bind the rendered prompt to its own lifetime: a final answer clears the controller's prompt immediately. -->
-      {#each controller.currentPrompt ? [controller.currentPrompt] : [] as prompt (prompt.id)}
+      <!-- A mixed check keeps one editor between sounds. Completing the check removes it. -->
+      {#each controller.currentPrompt ? [controller.currentPrompt] : [] as prompt (mixedPlan?.plan.id ?? prompt.id)}
         <RecognitionPrompt
           phase={controller.phase}
           typed={['recall', 'short-group'].includes(prompt.spec.kind)}
+          hasSymbols={Boolean(mixedPlan || reviewPlan) ||
+            /[^A-Z]/.test(getLessonChars(controller.state.step))}
+          onSkip={mixedPlan ? () => handleSubmitAnswer('', 'keyboard') : undefined}
           scored={prompt.isScored}
           coaching={Boolean(reviewPlan)}
           assessment={Boolean(mixedPlan)}
@@ -1073,11 +1081,6 @@
             onclick={() => beginCheck(true)}>{m.check_restart()}</button
           >
         {/if}
-        {#if mixedPlan && controller.phase === 'answering'}<button
-            type="button"
-            class="btn-ghost check-skip"
-            onclick={() => handleSubmitAnswer('', 'keyboard')}>{m.mixed_skip()}</button
-          >{/if}
       {/each}
     {:else if controller.currentPrompt?.spec.kind === 'introduction' && !['abandoned', 'idle'].includes(controller.phase)}
       <AudioPrompt
@@ -1110,14 +1113,6 @@
   }
   .mixed-setup .btn-primary {
     justify-self: start;
-  }
-  .check-skip {
-    min-width: 7rem;
-    min-height: calc(var(--answer-target-min) + var(--space-1));
-    color: var(--accent);
-    border-color: var(--border);
-    font-size: var(--text-base);
-    font-weight: 600;
   }
   .loading-stage {
     min-height: 100vh;
@@ -1166,6 +1161,24 @@
     justify-content: center;
     gap: var(--space-2);
     margin: 0;
+  }
+  .session-status {
+    display: contents;
+  }
+  /* Reserve the translated saving line above the question through each autosave. */
+  .session-status:has(~ :global(.phone-response)) {
+    display: grid;
+    width: 100%;
+    margin-block-start: -1lh;
+    font-size: var(--text-sm);
+  }
+  .session-status:has(~ :global(.phone-response))::before {
+    content: attr(data-saving);
+    visibility: hidden;
+    grid-area: 1 / 1;
+  }
+  .session-status:has(~ :global(.phone-response)) > :global(*) {
+    grid-area: 1 / 1;
   }
   .save-status :global(svg) {
     color: var(--status-good);

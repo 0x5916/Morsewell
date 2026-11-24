@@ -1,9 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import de from '../messages/de.json' with { type: 'json' };
+import { installDeterministicAudioClock } from './audio-clock';
+import { answerBoxAppearance, expectPhoneQwerty } from './phone-keyboard';
 import {
   EVIDENCE_DB,
   pageAlert,
   readCopyCheckpoint,
+  readGuidedCheckpoint,
   readOwnedSessions,
   readSessionCount,
   resetAcceptance,
@@ -374,7 +377,11 @@ test('retrying a failed practice save records exactly one session', async ({ pag
 });
 
 test.describe('passage setup on a phone', () => {
-  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  test.use({
+    viewport: { width: 390, height: 844 },
+    screen: { width: 390, height: 844 },
+    hasTouch: true
+  });
   test('previews the generated duration, then keeps editing and scoring reachable', async ({
     page
   }) => {
@@ -384,10 +391,15 @@ test.describe('passage setup on a phone', () => {
     await expect(page.getByText('Type what you hear. Leave a space between groups.')).toBeVisible();
     await page.getByRole('button', { name: 'Play passage' }).tap();
     const answer = page.getByRole('textbox', { name: 'Your copy' });
-    await answer.fill('K M');
+    await expect(answer).toHaveAttribute('inputmode', 'none');
+    const keys = page.getByRole('group', { name: 'Training keyboard' });
+    for (const name of ['K', 'Space', 'M'])
+      await keys.getByRole('button', { name, exact: true }).tap();
+    await expect(answer).toHaveValue('K M');
     const score = page.getByRole('button', { name: 'Score this passage' });
     await expect(page.getByRole('combobox', { name: 'Practice content' })).toHaveCount(0);
     await expect(page.locator('.score-shortcut')).toBeHidden();
+    await score.evaluate((element) => element.scrollIntoView({ block: 'center' }));
     await expect(score).toBeInViewport({ ratio: 1 });
     await score.tap();
     const result = page.getByRole('dialog', { name: 'Practice results' });
@@ -402,23 +414,191 @@ test.describe('passage setup on a phone', () => {
     await expect(page.getByRole('combobox', { name: 'Practice content' })).toBeVisible();
     await setup.tap();
     await expect(answer).toHaveValue('K M');
+    await expect(keys).toHaveCount(0);
+    await expect(page.getByRole('checkbox', { name: 'Lesson keys only' })).toHaveCount(0);
+  });
+
+  test('lesson keys follow the cumulative group lesson and leave words unrestricted', async ({
+    page
+  }) => {
+    await resetToHome(page);
+    await page.goto('/en/morse/practice');
+    const button = (name: string) => page.getByRole('button', { name, exact: true });
+    const filter = page.getByRole('checkbox', { name: 'Lesson keys only' });
+    const characters = page.locator('.keys .character');
+    const enabled = page.locator('.keys .character:enabled');
+    const setup = page.locator('.setup-details > summary');
+    const play = button('Play passage');
+    const replace = button('Discard and start new passage');
+    await play.tap();
+    await expect(filter).toBeChecked();
+    await expectPhoneQwerty(page);
+    await expect(enabled).toHaveText(['K', 'M']);
+    await expect(button('Space')).toBeEnabled();
+    await expect(button('Backspace')).toBeEnabled();
+    const layer = page.locator('.training-keyboard .layer');
+    const layerPosition = () =>
+      layer.evaluate((button) => {
+        const deck = button.closest('.training-keyboard')!.getBoundingClientRect();
+        const key = button.getBoundingClientRect();
+        return [key.x - deck.x, key.y - deck.y, key.width, key.height, deck.height];
+      });
+    const letterPosition = await layerPosition();
+    await button('123 · Numbers and punctuation').tap();
+    expect(await layerPosition()).toEqual(letterPosition);
+    await expect(characters).toHaveText([...'1234567890.,/?']);
+    await expect(enabled).toHaveCount(0);
+    await button('ABC · Letters').tap();
+
+    await setup.tap();
+    await page.getByLabel('Use characters through lesson').selectOption('18');
+    await replace.tap();
+    await play.tap();
+    await expect(filter).toBeChecked();
+    await expectPhoneQwerty(page);
+    await expect(button('R')).toBeEnabled();
+    await expect(button('Y')).toBeEnabled();
+    await expect(button('Z')).toBeDisabled();
+    await button('123 · Numbers and punctuation').tap();
+    await expect(enabled).toHaveText(['0', '.']);
+    await setup.tap();
+    await page.getByLabel('Practice content').selectOption('words');
+    await replace.tap();
+    await play.tap();
+    await expect(filter).toHaveCount(0);
+    await expect(enabled).toHaveText([...'QWERTYUIOPASDFGHJKLZXCVBNM']);
+  });
+
+  test('the app keyboard preserves physical word deletion and undo in a passage', async ({
+    page
+  }) => {
+    await resetToHome(page);
+    await page.goto('/en/morse/practice');
+    await page.getByRole('button', { name: 'Play passage' }).tap();
+    const copy = page.getByRole('textbox', { name: 'Your copy' });
+    await expect(copy).toHaveAttribute('inputmode', 'none');
+    await copy.press('K');
+    await expect(copy).toHaveValue('K');
+    await copy.press('ControlOrMeta+z');
+    await expect(copy).toHaveValue('');
+    await copy.pressSequentially('KM MK');
+    await copy.press(process.platform === 'darwin' ? 'Alt+Backspace' : 'Control+Backspace');
+    await expect(copy).toHaveValue('KM ');
+    await expect(page.getByRole('group', { name: 'Training keyboard' })).toBeVisible();
+  });
+
+  test('edits a selection, restores the copy and shares the keyboard choice with Lessons', async ({
+    page
+  }) => {
+    await resetToHome(page, 'Returning learner / populated history');
+    await page.goto('/en/morse/practice');
+    const button = (name: string) => page.getByRole('button', { name, exact: true });
+    await button('Play passage').tap();
+    const filter = page.getByRole('checkbox', { name: 'Lesson keys only' });
+    const copy = page.getByRole('textbox', { name: 'Your copy' });
+    await copy.pressSequentially('KM');
+    await page.keyboard.down('M');
+    await page.keyboard.down('M');
+    await page.keyboard.up('M');
+    await expect(copy).toHaveValue('KMMM');
+    await page.keyboard.down('Backspace');
+    await page.keyboard.down('Backspace');
+    await page.keyboard.up('Backspace');
+    await expect(copy).toHaveValue('KM');
+    await filter.uncheck();
+    await expect(copy).toHaveValue('KM');
+    await copy.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, 1));
+    await button('123 · Numbers and punctuation').tap();
+    await expect(copy).toBeFocused();
+    await button('5').tap();
+    await button('Slash').tap();
+    await expect(copy).toHaveValue('5/M');
+    await button('Backspace').tap();
+    await expect(copy).toHaveValue('5M');
+    const appBox = await answerBoxAppearance(copy);
+    await button('Use phone keyboard').tap();
+    await expect(filter).toHaveCount(0);
+    await expect(copy).toBeEditable();
+    await expect(copy).toBeFocused();
+    expect(await answerBoxAppearance(copy)).toEqual(appBox);
+    await expect(copy).toHaveValue('5M');
+    await saveAndLeave(page);
+    await page.goto('/en/morse/practice?resume=copy');
+    await expect(copy).toHaveValue('5M');
+    await expect(copy).toBeEditable();
+    await button('Use app keyboard').tap();
+    await expect(filter).not.toBeChecked();
+    await expect(button('Z')).toBeEnabled();
+    await filter.check();
+    await button('Use phone keyboard').tap();
+    await saveAndLeave(page);
+    await installDeterministicAudioClock(page);
+    await page.goto('/en/morse/learn/session?check=KM');
+    await button('Start first-listen check').tap();
+    const answer = page.getByRole('textbox', { name: 'Type your answer' });
+    await expect(answer).toBeEditable();
+    const nativeBox = await answerBoxAppearance(answer);
+    expect(nativeBox.width).toBe(nativeBox.height);
+    expect(nativeBox.width).toBeGreaterThanOrEqual(80);
+    await button('Use app keyboard').tap();
+    await expect(answer).toHaveAttribute('inputmode', 'none');
+    expect(await answerBoxAppearance(answer)).toEqual(nativeBox);
+    await expect(filter).toHaveCount(0);
+    await expect(page.locator('.keys .character:enabled')).toHaveCount(26);
+    await expect(button('Backspace')).toHaveCount(0);
+    await button('123 · Numbers and punctuation').tap();
+    await expect(button('0')).toBeEnabled();
+    await button('ABC · Letters').tap();
+    await expect(page.locator('body')).not.toHaveClass(/keyboard-open/);
+    await button('K').tap();
+    await expect
+      .poll(() => readGuidedCheckpoint(page))
+      .toMatchObject({
+        state: {
+          attempts: [
+            {
+              enteredText: 'K',
+              inputMode: 'touch',
+              responseInterface: 'full-alphabet',
+              replayCount: 0
+            }
+          ]
+        }
+      });
   });
 });
 
-test('German scoring controls stay inside the passage at 200% text', async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 844 });
-  await resetToHome(page);
-  await page.goto('/de/morse/practice', { waitUntil: 'networkidle' });
-  await page.addStyleTag({ content: 'html {font-size: 200%}' });
-  await page.getByRole('button', { name: de.practice_start }).click();
-  await page.getByRole('textbox', { name: de.trainer_answer_label }).fill('KM');
-  const score = page.getByRole('button', { name: de.trainer_check, exact: true });
-  const box = (await score.boundingBox())!;
-  const card = (await page.getByRole('region', { name: de.practice_copy_region }).boundingBox())!;
-  expect(box.x).toBeGreaterThanOrEqual(card.x);
-  expect(box.x + box.width).toBeLessThanOrEqual(card.x + card.width + 1);
-  await score.click();
-  await expect(page.getByRole('dialog', { name: de.trainer_result_title })).toBeVisible();
+test.describe('Practice at 320px on a phone', () => {
+  const size = { width: 320, height: 844 };
+  test.use({ viewport: size, screen: size, hasTouch: true });
+  test('German keys and scoring controls stay inside the passage at 200% text', async ({
+    page
+  }) => {
+    await resetToHome(page);
+    await page.goto('/de/morse/practice', { waitUntil: 'networkidle' });
+    await page.addStyleTag({ content: 'html {font-size: 200%}' });
+    await page.getByRole('button', { name: de.practice_start }).click();
+    const keys = page.getByRole('group', { name: de.training_keyboard });
+    await keys.getByRole('button', { name: 'K', exact: true }).tap();
+    for (const toggle of [de.training_numbers, de.training_letters]) {
+      await keys.getByRole('button', { name: toggle }).tap();
+      expect(
+        await keys.getByRole('button').evaluateAll((buttons) =>
+          buttons.every((b) => {
+            const box = b.getBoundingClientRect();
+            return box.left >= 0 && box.right <= innerWidth && b.scrollWidth <= b.clientWidth + 1;
+          })
+        )
+      ).toBe(true);
+    }
+    const score = page.getByRole('button', { name: de.trainer_check, exact: true });
+    const box = (await score.boundingBox())!;
+    const card = (await page.getByRole('region', { name: de.practice_copy_region }).boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(card.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(card.x + card.width + 1);
+    await score.click();
+    await expect(page.getByRole('dialog', { name: de.trainer_result_title })).toBeVisible();
+  });
 });
 
 test('context choices preserve the groups lesson and checked playback stays listen-only', async ({

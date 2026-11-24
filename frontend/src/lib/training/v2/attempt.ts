@@ -16,7 +16,7 @@ import {
   V2_SCHEMA_VERSION,
   type AttemptClassification,
   type AttemptEvent,
-  type InputMode,
+  type AnswerSource,
   type MasteryPolicy,
   type Prompt
 } from './types';
@@ -30,7 +30,7 @@ export interface ScorePromptInput {
   /** Epoch milliseconds when user submitted the answer. */
   submittedAtMs: number;
   replayCount: number;
-  inputMode: InputMode;
+  inputMode: AnswerSource;
   policy?: MasteryPolicy;
   idGenerator?: () => string;
   nowIso?: string;
@@ -101,7 +101,8 @@ export function scorePromptAttempt(input: ScorePromptInput): AttemptEvent {
     classification,
     latencyMs,
     replayCount,
-    inputMode,
+    inputMode: inputMode === 'full-alphabet' ? 'touch' : inputMode,
+    ...(inputMode === 'full-alphabet' && { responseInterface: inputMode }),
     charWpm: prompt.spec.charWpm,
     effWpm: prompt.spec.effWpm,
     freqHz: prompt.spec.freqHz,

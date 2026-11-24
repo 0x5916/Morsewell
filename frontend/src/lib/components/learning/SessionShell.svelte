@@ -396,6 +396,16 @@
     margin: auto 0;
   }
 
+  .session-stage:has(:global(.phone-response)) {
+    align-items: stretch;
+    padding-block: clamp(1lh, calc((var(--session-height, 100svh) - 540px) / 2), 160px)
+      max(8px, env(safe-area-inset-bottom, 0px));
+  }
+  .session-content:has(:global(.phone-response)) {
+    margin-block: 0;
+    gap: 0;
+  }
+
   .session-shell--complete .session-stage {
     align-items: flex-start;
     padding-top: var(--space-8);
