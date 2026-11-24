@@ -394,7 +394,7 @@
               bind:this={answerEl}
               bind:value={() => inputText, editCopy}
               class="textarea copy-textarea"
-              readonly={result >= 0 || keyboard.active}
+              readonly={result >= 0}
               inputmode={keyboard.active ? 'none' : 'text'}
               maxlength={copyInputLimit(lessonText)}
               autocapitalize="characters"

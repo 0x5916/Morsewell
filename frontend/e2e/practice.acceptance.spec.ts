@@ -468,6 +468,24 @@ test.describe('passage setup on a phone', () => {
     await expect(enabled).toHaveText([...'QWERTYUIOPASDFGHJKLZXCVBNM']);
   });
 
+  test('the app keyboard preserves physical word deletion and undo in a passage', async ({
+    page
+  }) => {
+    await resetToHome(page);
+    await page.goto('/en/morse/practice');
+    await page.getByRole('button', { name: 'Play passage' }).tap();
+    const copy = page.getByRole('textbox', { name: 'Your copy' });
+    await expect(copy).toHaveAttribute('inputmode', 'none');
+    await copy.press('K');
+    await expect(copy).toHaveValue('K');
+    await copy.press('ControlOrMeta+z');
+    await expect(copy).toHaveValue('');
+    await copy.pressSequentially('KM MK');
+    await copy.press(process.platform === 'darwin' ? 'Alt+Backspace' : 'Control+Backspace');
+    await expect(copy).toHaveValue('KM ');
+    await expect(page.getByRole('group', { name: 'Training keyboard' })).toBeVisible();
+  });
+
   test('edits a selection, restores the copy and shares the keyboard choice with Lessons', async ({
     page
   }) => {
@@ -478,6 +496,14 @@ test.describe('passage setup on a phone', () => {
     const filter = page.getByRole('checkbox', { name: 'Lesson keys only' });
     const copy = page.getByRole('textbox', { name: 'Your copy' });
     await copy.pressSequentially('KM');
+    await page.keyboard.down('M');
+    await page.keyboard.down('M');
+    await page.keyboard.up('M');
+    await expect(copy).toHaveValue('KMMM');
+    await page.keyboard.down('Backspace');
+    await page.keyboard.down('Backspace');
+    await page.keyboard.up('Backspace');
+    await expect(copy).toHaveValue('KM');
     await filter.uncheck();
     await expect(copy).toHaveValue('KM');
     await copy.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, 1));

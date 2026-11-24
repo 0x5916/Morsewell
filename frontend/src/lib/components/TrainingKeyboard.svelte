@@ -59,6 +59,7 @@
     if (
       disabled ||
       !mode.active ||
+      !(field instanceof HTMLInputElement) ||
       event.target !== field ||
       event.defaultPrevented ||
       event.repeat ||
@@ -69,7 +70,7 @@
       event.altKey
     )
       return;
-    const key = event.key === 'Enter' && field instanceof HTMLTextAreaElement ? '\n' : event.key;
+    const key = event.key;
     if (key.length !== 1 && key !== 'Backspace' && key !== 'Delete') return;
     event.preventDefault();
     edit(key, 'keyboard');
