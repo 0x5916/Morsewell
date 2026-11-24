@@ -68,6 +68,7 @@ export interface Prompt {
 }
 
 export type InputMode = 'keyboard' | 'grid' | 'touch';
+export type AnswerSource = InputMode | 'full-alphabet';
 
 export type AttemptClassification =
   'automatic' | 'developing' | 'incorrect' | 'missing' | 'unmeasured';
@@ -89,6 +90,8 @@ export interface AttemptEvent {
   /** Number of times the learner triggered audio replay for this prompt. */
   replayCount: number;
   inputMode: InputMode;
+  /** Present on local attempts made with the unrestricted app keyboard. */
+  responseInterface?: 'full-alphabet';
   charWpm: number;
   effWpm: number;
   freqHz: number;

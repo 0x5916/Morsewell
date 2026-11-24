@@ -118,7 +118,12 @@ export function createEvidenceSessionRepositories(
         help_before_response: false,
         audio_valid: presentation.valid,
         interruption_invalidated: presentation.interrupted,
-        response_interface: attempt.inputMode === 'keyboard' ? 'keyboard' : 'restricted',
+        response_interface:
+          attempt.inputMode === 'keyboard'
+            ? 'keyboard'
+            : attempt.inputMode === 'touch' && attempt.responseInterface === 'full-alphabet'
+              ? 'full-alphabet'
+              : 'restricted',
         first_presented_at: presentation.startedAt,
         prior_exposure: presentation.priorExposure[attempt.targetCharacter] ?? null,
         char_wpm: attempt.charWpm,

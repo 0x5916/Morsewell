@@ -1,7 +1,7 @@
 import { deleteTrainingDb, openTrainingDb } from '../../src/lib/data/training-db';
 import { createAttemptRepository } from '../../src/lib/data/attempt-repository';
 import { createSessionRepository } from '../../src/lib/data/session-repository';
-import { AUTH_STORAGE_KEYS, CW_STORAGE_KEYS } from '../../src/lib/storageKeys';
+import { AUTH_STORAGE_KEYS, CW_STORAGE_KEYS, UI_STORAGE_KEYS } from '../../src/lib/storageKeys';
 import { ACCOUNT_ID, buildFixture, SCENARIOS, type Scenario } from './fixtures';
 import { FIXTURE_EVIDENCE_DB, resetLearningPilotFixture, resetEvidenceFixture } from './faults';
 
@@ -55,6 +55,8 @@ async function selectScenario(scenario: Scenario) {
   status.textContent = 'Preparing synthetic data…';
   sessionStorage.removeItem('acceptance.failSave');
   sessionStorage.removeItem('acceptance.loadingUntil');
+  localStorage.removeItem(UI_STORAGE_KEYS.trainingKeyboard);
+  localStorage.removeItem(UI_STORAGE_KEYS.lessonKeysOnly);
   for (const key of [...Object.values(AUTH_STORAGE_KEYS), ...Object.values(CW_STORAGE_KEYS)])
     localStorage.removeItem(key);
   await deleteTrainingDb(undefined, () => {

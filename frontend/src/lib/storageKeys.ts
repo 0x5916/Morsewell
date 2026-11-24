@@ -14,5 +14,7 @@ export const CW_STORAGE_KEYS = {
 
 export const UI_STORAGE_KEYS = {
   theme: 'theme',
-  palette: 'palette'
+  palette: 'palette',
+  trainingKeyboard: 'training.keyboard',
+  lessonKeysOnly: 'training.keyboard.lessonKeysOnly'
 } as const;

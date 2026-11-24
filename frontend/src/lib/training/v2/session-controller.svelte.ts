@@ -30,7 +30,7 @@ import { createAttemptId, createSessionId } from './ids';
 import { buildLessonPlan } from './lesson-builder';
 import type {
   AttemptEvent,
-  InputMode,
+  AnswerSource,
   MasteryPolicy,
   Prompt,
   TrainingSessionRecord
@@ -498,7 +498,7 @@ export class GuidedSessionController {
     this.#dispatch({ type: 'play-end', endedAtMs });
   }
 
-  submitAnswer(enteredText: string, inputMode: InputMode): boolean {
+  submitAnswer(enteredText: string, inputMode: AnswerSource): boolean {
     if (this.state.phase !== 'answering' || !this.state.currentPrompt) {
       return false;
     }

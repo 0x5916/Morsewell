@@ -11,6 +11,7 @@ export function pageAlert(page: Page) {
 type Scenario =
   | 'New learner / empty history'
   | 'Returning learner / populated history'
+  | 'Course complete'
   | 'Practice save fails once, then retry'
   | 'Guest with saved unfinished practice'
   | 'Synthetic account / pending sync';
