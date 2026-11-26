@@ -761,6 +761,7 @@
   "admin_last_completion": "最近一次完成訓練",
   "admin_no_completion": "尚無完成紀錄",
   "admin_session_history": "訓練紀錄",
+  "admin_latest_outside_period": "最近一次完成發生在此期間之外。報告僅涵蓋新加坡時間的完整日期，因此之後的訓練會顯示在包含該日期的期間內。",
   "admin_no_sessions": "此期間沒有已同步的訓練紀錄。",
   "admin_missing_account": "此帳號無法存取。",
   "admin_back_directory": "返回結果",

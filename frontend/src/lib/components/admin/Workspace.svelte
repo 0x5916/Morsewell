@@ -25,16 +25,12 @@
   let days = $derived(
     [7, 90].includes(Number(params.get('days'))) ? Number(params.get('days')) : 30
   );
-  let defaultUntil = $state('');
-  let until = $derived(params.get('until') || defaultUntil);
-  function pinPeriod(value: string) {
-    if (!defaultUntil && !params.has('until')) defaultUntil = value;
-  }
+  let until = $derived(params.get('until') ?? '');
   let metric = $derived<Cohort>(
     metrics.includes(params.get('metric') as Metric) ? (params.get('metric') as Metric) : 'all'
   );
   let learner = $derived(params.get('learner') ?? undefined);
-  let key = $derived(`${days}/${until === defaultUntil ? '' : until}/${metric}`);
+  let key = $derived(`${days}/${until}/${metric}`);
   function positionFor(k: string) {
     return (positions[k] ??= { search: '', cursors: [] });
   }
@@ -80,13 +76,7 @@
   </header>
 {/snippet}
 {#key key}
-  {#if view === 'overview'}<Overview
-      {reportHeader}
-      onPeriod={pinPeriod}
-      {days}
-      {until}
-      {onDenied}
-    />
+  {#if view === 'overview'}<Overview {reportHeader} {days} {until} {onDenied} />
   {:else if view === 'compose' || view === 'review'}
     <Composer {view} {days} {until} {metric} {onDenied} />
   {:else if view === 'sent'}
@@ -101,7 +91,6 @@
       <Learner id={learner} {days} {until} {onDenied} />{/key}
   {:else}<Directory
       {reportHeader}
-      onPeriod={pinPeriod}
       {days}
       {until}
       {metric}

@@ -20,7 +20,6 @@
   import LoadingSpinner from '#lib/components/LoadingSpinner.svelte';
   let {
     reportHeader,
-    onPeriod,
     days,
     until,
     onDenied
@@ -28,7 +27,6 @@
     reportHeader: Snippet<[string, ReportPeriod | null]>;
     days: number;
     until: string;
-    onPeriod: (until: string) => void;
     onDenied: (status: number) => void;
   } = $props();
   const scope = createSessionScope();
@@ -39,10 +37,7 @@
     failed = false;
     try {
       const result = await getAdminOverview(days, until);
-      if (current()) {
-        report = result;
-        onPeriod(result.period.until);
-      }
+      if (current()) report = result;
     } catch (e) {
       if (!current()) return;
       if (e instanceof ApiError && [401, 403].includes(e.status)) onDenied(e.status);
@@ -69,7 +64,7 @@
     <div class="metrics">
       {#each metrics as metric (metric)}
         {@const peak = Math.max(...report.daily.map((d) => d[metric]), 1)}
-        <a class="card-sm metric" href={reportHref('users', days, report.period.until, metric)}>
+        <a class="card-sm metric" href={reportHref('users', days, until, metric)}>
           <div class="metric-heading">
             <span class="metric-label">{metricLabels[metric]()}</span><ChevronRight
               size={16}

@@ -761,6 +761,7 @@
   "admin_last_completion": "直近の完了日時",
   "admin_no_completion": "完了記録なし",
   "admin_session_history": "セッション履歴",
+  "admin_latest_outside_period": "直近の完了はこの期間より後です。レポートはシンガポール時間の丸一日のみを対象とするため、それ以降のセッションはその日を含む期間に表示されます。",
   "admin_no_sessions": "この期間に同期されたセッションはありません。",
   "admin_missing_account": "このアカウントは利用できません。",
   "admin_back_directory": "検索結果に戻る",

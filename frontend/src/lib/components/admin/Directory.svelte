@@ -20,14 +20,12 @@
   let {
     reportHeader,
     onDenied,
-    onPeriod,
     days,
     until,
     metric,
     position
   }: {
     reportHeader: Snippet<[string, ReportPeriod | null]>;
-    onPeriod: (until: string) => void;
     onDenied: (status: number) => void;
     days: number;
     until: string;
@@ -51,7 +49,6 @@
     try {
       const result = await searchAdminUsers(search, days, until, metric, cursors.at(-1));
       if (!current()) return;
-      onPeriod(result.period.until);
       period = result.period;
       accounts = result.data;
       next = result.next_cursor;

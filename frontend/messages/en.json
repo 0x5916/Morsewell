@@ -761,6 +761,7 @@
   "admin_last_completion": "Last recorded completion",
   "admin_no_completion": "No recorded completions",
   "admin_session_history": "Session history",
+  "admin_latest_outside_period": "Latest completion is outside this period. Reports include only complete Singapore days, so later sessions appear in a reporting period that covers them.",
   "admin_no_sessions": "No synced sessions in this period.",
   "admin_missing_account": "This account is unavailable.",
   "admin_back_directory": "Back to results",
