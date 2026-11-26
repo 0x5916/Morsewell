@@ -761,6 +761,7 @@
   "admin_last_completion": "最近一次完成训练",
   "admin_no_completion": "暂无完成记录",
   "admin_session_history": "训练记录",
+  "admin_latest_outside_period": "最近一次完成发生在此期间之外。报告仅涵盖新加坡时间的完整日期，因此之后的训练会显示在包含该日期的期间内。",
   "admin_no_sessions": "此期间没有已同步的训练记录。",
   "admin_missing_account": "此账号不可用。",
   "admin_back_directory": "返回结果",

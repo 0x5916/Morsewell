@@ -761,6 +761,7 @@
   "admin_last_completion": "Letzter erfasster Abschluss",
   "admin_no_completion": "Keine erfassten Abschlüsse",
   "admin_session_history": "Trainingsverlauf",
+  "admin_latest_outside_period": "Der letzte erfasste Abschluss liegt außerhalb dieses Zeitraums. Berichte umfassen nur vollständige Tage in Singapur, daher erscheinen spätere Einheiten in einem Berichtszeitraum, der sie einschließt.",
   "admin_no_sessions": "Keine synchronisierten Einheiten in diesem Zeitraum.",
   "admin_missing_account": "Dieses Konto ist nicht verfügbar.",
   "admin_back_directory": "Zurück zu den Ergebnissen",

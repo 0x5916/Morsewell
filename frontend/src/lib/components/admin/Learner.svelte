@@ -12,6 +12,7 @@
   import { ApiError, getLearnerReport, type LearnerReport } from '#lib/api.ts';
   import { createSessionScope } from '#lib/session-scope.ts';
   import { duration, metricValue, rangeLabel, reportDate } from '#lib/admin-report.ts';
+  import { latestOutsidePeriod } from '#lib/admin-period.ts';
   import { getLocale } from '#lib/paraglide/runtime.js';
   import { formatPercent } from '#lib/format.ts';
   import * as m from '#lib/paraglide/messages.js';
@@ -117,6 +118,9 @@
     </section>
     <section>
       <h3 class="section-title">{m.admin_session_history()}</h3>
+      {#if latestOutsidePeriod(report.last_completed_at, report.period)}<p class="body-text">
+          {m.admin_latest_outside_period()}
+        </p>{/if}
       {#if !report.sessions.length}<p class="body-text">{m.admin_no_sessions()}</p>
       {:else}<ol class="row-list" role="list">
           {#each report.sessions as row (row.id)}
