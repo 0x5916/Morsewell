@@ -77,7 +77,7 @@ for (const { input, viewport, colorScheme } of [
   });
 }
 
-test('the Practice title tip matches the Penpot heading and close treatment', async ({ page }) => {
+test('the Practice title tip matches the heading and close treatment', async ({ page }) => {
   await resetToHome(page);
   await page.goto('/morse/practice', { waitUntil: 'networkidle' });
   const trigger = page.getByRole('button', { name: 'About Practice' });

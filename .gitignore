@@ -16,7 +16,6 @@ backups/
 /data/postgres/
 
 # Local MCP install
-.penpot-mcp/
 .playwright-mcp/
 
 # Local design review output

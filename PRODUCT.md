@@ -54,14 +54,14 @@ The interface supports light and dark themes and five languages: English, German
 
 ### Design workflow
 
-Morsewell uses Penpot as its design source of truth.
+Morsewell uses a code-first development workflow: the application source is the design source of truth.
 
-- Inspect existing designs and components before proposing changes.
-- For exploratory redesigns, create a separate Penpot page instead of modifying existing work.
-- Preserve established designs unless changes are explicitly authorized.
-- Review desktop, mobile, and relevant interaction states.
-- Do not modify application code unless implementation is explicitly requested.
-- Treat generated images as inspiration, not implementation specifications.
+- Inspect the existing routes, shared components, and tokens before proposing changes.
+- For exploratory redesigns, use a separate branch or isolated worktree instead of reworking established screens in place.
+- Preserve established layouts, components, and interactions unless changes are explicitly authorized.
+- Review desktop, mobile, both themes, all five locales, and relevant interaction states in the running application.
+- Design and implementation are reviewed together as one change; do not maintain a parallel design artifact as the source of truth.
+- Treat reference images as inspiration, not implementation specifications.
 
 ## Capabilities and Constraints
 
@@ -88,13 +88,13 @@ Morsewell should feel **clear, approachable, focused, and trustworthy**.
 - **Trust:** Honest progress reporting and no exaggerated claims.
 - **Openness:** Free, independent, Apache-2.0 open source, without advertising or third-party analytics.
 
-Forest Jade is the primary action color across three palettes. Neutral (Jade & Graphite) and System appearance are the defaults. Warm (Jade & Linen) and Cool (Jade & Slate) offer alternate surface tones in both light and dark modes. Gold is a sparse decorative accent. The exact semantic colors live in [app.css](frontend/src/app.css). Preserve the original paddle artwork and favicon geometry and colors; the navigation wordmark is text-only. Use existing approved Penpot components and visual conventions as the baseline. Detailed visual rules belong in the design system.
+Forest Jade is the primary action color across three palettes. Neutral (Jade & Graphite) and System appearance are the defaults. Warm (Jade & Linen) and Cool (Jade & Slate) offer alternate surface tones in both light and dark modes. Gold is a sparse decorative accent. The exact semantic colors and shared visual tokens live in [app.css](frontend/src/app.css). Preserve the original paddle artwork and favicon geometry and colors; the navigation wordmark is text-only. Use the existing components and visual conventions in the frontend source as the baseline.
 
 ## Evidence on Hand
 
 Morsewell has an existing functional application with guided lessons, practice, learning history, progress, settings, and a community forum.
 
-The repository and acceptance notes document implemented behavior. Editable Penpot designs cover existing interface flows.
+The repository and acceptance notes document implemented behavior; the frontend source defines the current interface.
 
 The About page documents the author's radio amateur background. No verified testimonials, user statistics, performance benchmarks, or partnerships are available.
 
